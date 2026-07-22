@@ -1,4 +1,4 @@
-// Correctness tests for GEMV and the whole GEMM ladder. No rung is timed until
+﻿// Correctness tests for GEMV and the whole GEMM ladder. No rung is timed until
 // it passes here.
 //
 // On tolerances. A GEMM accumulates k products per output, and fp32 addition is
@@ -188,7 +188,7 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(1, 1, 1), std::make_tuple(3, 5, 7)));
 
 // A larger case checked against cuBLAS rather than a CPU triple loop, which is
-// what the spec asks for at size: the CPU reference is O(n^3) on the host and
+// the right reference at this size: the CPU reference is O(n^3) on the host and
 // gets slow well before the sizes the sweep actually benchmarks.
 TEST(GemmLarge, CustomKernelsAgreeWithCublas) {
     constexpr int kN = 512;

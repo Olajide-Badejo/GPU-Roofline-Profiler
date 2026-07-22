@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Style gate: forbid em dashes and en dashes repo wide, and forbid the
 LaTeX prose dash ligatures inside .tex sources.
 
-The rule I hold myself to on this project (spec Section 4, rule 3):
+The rule I hold myself to on this project:
 
   * U+2014 (em dash) and U+2013 (en dash) appear in no tracked file, ever,
     including plot labels, docstrings, and commit messages.
@@ -26,9 +26,9 @@ from pathlib import Path
 EM_DASH = chr(0x2014)
 EN_DASH = chr(0x2013)
 
-# The upstream build spec is an external input document, not an authored
-# deliverable, so it is exempt from the authored prose rules.
-SKIP_FILES = {"gpu_roofline_profiler_spec.md"}
+# Files exempt from the prose rules. Empty: every tracked file is authored and
+# every one of them is held to the same standard.
+SKIP_FILES: set[str] = set()
 
 # Files that are binary or generated and carry no authored prose. Extensions
 # are lowercased before comparison.

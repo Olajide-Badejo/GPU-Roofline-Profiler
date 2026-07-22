@@ -1,4 +1,4 @@
-"""Loading raw pipeline output into validated pandas frames.
+﻿"""Loading raw pipeline output into validated pandas frames.
 
 Three inputs feed the analysis: the benchmark timing CSV from the C++ driver,
 the NVML monitor CSV, and Nsight Compute's CSV export. Each loader validates
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-# Columns the driver writes for every timing row (spec Section 8.1). Extra
+# Columns the driver writes for every timing row. Extra
 # columns (per kernel config params) are allowed and carried through; these are
 # the ones the analysis relies on and therefore validates.
 TIMING_REQUIRED_COLUMNS = (

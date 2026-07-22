@@ -126,7 +126,7 @@ void write_peaks_csv(const fs::path& path, const roofline::Peaks& peaks) {
 
 // Escape a string for embedding in JSON. Windows paths are the reason this
 // exists: "configs\sweep.yaml" written raw contains \s, which is not a legal
-// JSON escape, and the whole manifest fails to parse. The spec's rule that
+// JSON escape, and the whole manifest fails to parse. My rule that
 // results without a manifest do not exist makes an unparseable manifest as bad
 // as a missing one, so this is not a cosmetic fix.
 std::string json_escape(const std::string& value) {

@@ -1,4 +1,4 @@
-# Benchmark sweep definition. Changing the sweep happens here and never in
+﻿# Benchmark sweep definition. Changing the sweep happens here and never in
 # source: the driver reads this file, resolves it into a list of (kernel,
 # config) cells, and records the resolved copy into each run's manifest.
 #
@@ -38,7 +38,7 @@ gemv:
   block_sizes: [128, 256]
 
 gemm:
-  # Square GEMM ladder. The curated profiling subset (Section 2) uses the 2048
+  # Square GEMM ladder. The curated profiling subset uses the 2048
   # and 4096 sizes only, since Nsight Compute replays each kernel many times.
   sizes: [512, 1024, 2048, 4096]
   variants: [naive, tiled, register_blocked, vectorized, cublas]

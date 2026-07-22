@@ -1,7 +1,7 @@
-// Error checking wrapper for the CUDA runtime. Every runtime call in this
+﻿// Error checking wrapper for the CUDA runtime. Every runtime call in this
 // project goes through it so a failure reports its file, line, and a decoded
 // error string and then aborts, instead of corrupting a later result silently
-// (spec Section 4, rule 5). The cuBLAS reference kernel uses a sibling
+//. The cuBLAS reference kernel uses a sibling
 // CUBLAS_CHECK defined next to it, so this header stays free of the cuBLAS
 // include for the many translation units that never touch cuBLAS.
 //

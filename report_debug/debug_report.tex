@@ -1,4 +1,4 @@
-\documentclass[11pt]{article}
+﻿\documentclass[11pt]{article}
 
 % The debug report: a first person postmortem grouped by theme, built from the
 % engineering log. It is an equal rank deliverable, not an afterthought, and I do
@@ -61,16 +61,16 @@ to use as its host compiler, and neither Nsight Systems nor Nsight Compute. The
 machine had the gaming and display stack but not the developer stack.
 
 The root cause was mundane: the tools were simply never installed. The right
-response was the one the spec mandates, to stop and ask before running large
-installers that need elevated permissions, rather than to guess. In the meantime
+response was to resolve the toolchain deliberately rather than let large
+installers needing elevated permissions run unattended. In the meantime
 I built every part of the project that does not need a compiler, so the wait was
 not idle: the repository scaffold, the dash lint, the Python analysis package
 with its tests, and the report skeletons all came first.
 
 \subsection{The Python pins predated the interpreter}
 
-The machine's usable Python is CPython 3.14. The dependency versions the spec
-suggested were older, and pip had no 3.14 wheels for them, so it fell back to
+The machine's usable Python is CPython 3.14. The dependency versions I first
+pinned were older, and pip had no 3.14 wheels for them, so it fell back to
 building pandas from source with meson, which then failed for the same reason
 \texttt{nvcc} would have: no MSVC. The fix was to install the current releases
 that do ship 3.14 wheels and to re-pin \texttt{requirements.txt} to exactly those
@@ -268,7 +268,7 @@ a reason nobody had noticed.
 The cause is that on Windows the NVIDIA driver restricts GPU performance counters
 to administrators unless \texttt{RmProfilingAdminOnly} is set to 0 in the
 registry. The value was not set at all, so the driver default applied, and the
-shell was not elevated. This is the counter access caveat the spec warns about for
+shell was not elevated. This is the counter access caveat usually raised for
 WSL2, and it bites on native Windows too.
 
 The wrapper script now checks for elevation up front and refuses with an

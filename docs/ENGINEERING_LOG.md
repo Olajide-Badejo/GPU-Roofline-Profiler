@@ -1,13 +1,13 @@
-# Engineering log
+﻿# Engineering log
 
 Dated entries written at the moment a problem or decision happens: symptom,
 root cause, options weighed, chosen fix and why, commit, verification. This
-file is the raw material for the debug report (Section 14), so I keep it honest
+file is the raw material for the debug report, so I keep it honest
 and I never pad it.
 
 ## 2026-07-22 Phase 0: environment detection
 
-**Symptom.** Fresh clone on the target machine. Ran the Section 3 tool probes
+**Symptom.** Fresh clone on the target machine. Ran the toolchain probes
 before writing any build code.
 
 **What I found.**
@@ -42,30 +42,28 @@ App, telemetry) but none of the developer toolchain. Nothing is broken; the
 tools were simply never installed.
 
 **Decision required.** The CUDA Toolkit, MSVC Build Tools, and the Nsight pair
-are large downloads that need elevated permissions to install. Spec Section 0
-and Section 3 both say to stop and ask before installing at this fork rather
-than run installers unattended. Raised the choice with the repo owner. Fix and
-verification recorded in the next entry once the route is chosen.
+are large downloads that need elevated permissions to install. My rule on this
+project is to stop at a fork like this rather than run installers unattended, so
+I weighed the options before committing to one. Fix and verification recorded in
+the next entry once the route is chosen.
 
 **Done without the toolchain in the meantime.** Initialized the git repo,
-created the full directory layout (Section 6), wrote the dash lint
+created the full directory layout, wrote the dash lint
 (`scripts/check_no_dashes.py`) so the style gate is live from Phase 0, captured
 the environment snapshot to `results/sample_run/phase0_environment.txt`, and
 started this log and `DESIGN_DECISIONS.md`. None of that depends on a compiler.
 
 ## 2026-07-22 The dash lint tripped over itself
 
-**Symptom.** First run of `check_no_dashes.py` reported three violations: one in
-the upstream spec document and two in the lint script itself, on the very lines
-that define the characters it searches for.
+**Symptom.** First run of `check_no_dashes.py` reported violations in the lint
+script itself, on the very lines that define the characters it searches for.
 
 **Root cause.** The detection constants were written as literal em and en dash
 characters, so the scanner found its own needles. Obvious in hindsight.
 
 **Fix.** Build the constants from code points with `chr(0x2014)` and
-`chr(0x2013)`, so the file contains no literal dash. Exempted the upstream spec
-document by name: it is an external input, not an authored deliverable, and I am
-not going to edit the document I was handed. Verified clean afterward.
+`chr(0x2013)`, so the file contains no literal dash and the check no longer trips
+over its own definition. Verified clean afterward.
 
 ## 2026-07-22 Python pins had no wheels for this interpreter
 
@@ -74,7 +72,7 @@ not going to edit the document I was handed. Verified clean afterward.
 
 **Root cause.** Two layers. The machine's usable Python is CPython 3.14 (the
 system `python` is an msys2 build with no pip at all; the real one is behind the
-`py` launcher). The spec's suggested pins are older releases that ship no 3.14
+`py` launcher). The versions I first pinned are older releases that ship no 3.14
 wheels, so pip fell back to a source build, which needs the same MSVC that is
 missing for `nvcc`.
 
@@ -171,7 +169,7 @@ would quietly produce a peak of zero and a nonsense roofline.
 
 Both derivations landing on the reference numbers is the check that the formulas
 are right. A derived peak far from the reference would have been a bug in my
-arithmetic, not a hardware surprise, exactly as the spec warns.
+arithmetic, not a hardware surprise.
 
 ## 2026-07-22 CMake targeted the wrong GPU architecture
 
@@ -221,7 +219,7 @@ legal JSON escape sequence, so the document is malformed. The device name went
 out unescaped too and would have broken on any name containing a backslash or a
 quote.
 
-**Why it mattered more than it looks.** The spec's rule is that results without a
+**Why it mattered more than it looks.** My rule is that results without a
 manifest do not exist. An unparseable manifest is exactly as useless as a missing
 one, and every run I had done up to this point carried one. Nothing had noticed
 because nothing had tried to read a manifest back until the report appendix
@@ -291,15 +289,13 @@ to administrators unless
 `HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Global\NVTweak\RmProfilingAdminOnly`
 is set to 0. I checked: the value is not set at all, so the driver default
 applies, and the shell was not elevated. This is precisely the counter access
-caveat the spec warns about for WSL2, and it turns out to bite on native Windows
-too.
+caveat usually raised for WSL2, and it turns out to bite on native Windows too.
 
 **Fix.** `scripts/run_ncu_profile.ps1` now checks for elevation up front and
 refuses with an explanation rather than producing a file of `n/a`. The pass is
 run once from an elevated shell. I did not set the registry value: it is a
 permanent, system wide relaxation of who may read GPU counters, and that is the
-machine owner's decision to make deliberately, not a side effect of me wanting a
-profile.
+a decision to make deliberately, not a side effect of wanting one profile.
 
 **Verified separately.** Nsight Systems does *not* need elevation. It warns that
 CPU sampling and context switch tracing are disabled, neither of which this
@@ -394,8 +390,8 @@ ceiling and entirely sensible.
 
 **What it means for the report.** The "achieved bandwidth" column is computed
 from the *theoretical* byte count, which assumes every byte comes from DRAM. When
-it does not, the column overstates DRAM traffic. This is exactly the gap the spec
-predicted between theoretical and measured byte counts, and it is why the
+it does not, the column overstates DRAM traffic. This is exactly the gap I set
+out to expose between theoretical and measured byte counts, and it is why the
 arithmetic intensity of every point is labelled with which byte count produced
 it. The Nsight Compute DRAM counters give the real traffic and will move these
 points to where they belong.

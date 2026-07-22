@@ -1,6 +1,6 @@
-// The benchmark timing harness.
+﻿// The benchmark timing harness.
 //
-// Rules this enforces, from the methodology (spec Section 8.1):
+// Rules this enforces:
 //
 //   * CUDA events, never host wall clock, so what is measured is device time.
 //   * Many launches between one pair of events, then divide, so per launch

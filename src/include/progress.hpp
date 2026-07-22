@@ -1,7 +1,7 @@
-// A single-line, rank-style progress bar for the benchmark driver (spec
-// Section 9). It overwrites one line with a carriage return when stderr is a
-// TTY, and falls back to plain periodic lines when output is redirected to a
-// file or a CI log, so the log stays readable in both places.
+﻿// A single-line, rank-style progress bar for the benchmark driver. It overwrites
+// one line with a carriage return when stderr is a TTY, and falls back to plain
+// periodic lines when output is redirected to a file or a CI log, so the log
+// stays readable in both places.
 //
 // It renders like:
 //   [#######...] 68% | gemm_tiled 4096 | elapsed 00:07:42 | eta 00:03:20

@@ -51,5 +51,10 @@ venv/
 # Editor / OS
 .vscode/
 .idea/
+.claude/
 *.swp
 Thumbs.db
+
+# Personal working notes and planning material, kept locally and not published.
+/report_for_me/
+/gpu_roofline_profiler_spec.md

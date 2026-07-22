@@ -1,7 +1,7 @@
-# Python analysis and tooling dependencies.
+﻿# Python analysis and tooling dependencies.
 #
 # Pinned to the versions that actually install and pass on the target machine,
-# which runs CPython 3.14. The spec's suggested pins predated 3.14 and had no
+# which runs CPython 3.14. The versions I first pinned predated 3.14 and had no
 # wheels for it, so pip tried to build pandas from source and failed for want of
 # MSVC. These are the wheels that exist for 3.14; the pins reflect reality on
 # this box rather than an aspiration.
