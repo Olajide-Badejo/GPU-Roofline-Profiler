@@ -1,0 +1,46 @@
+# Build output
+/build/
+/report/build/
+/report_debug/build/
+/report_for_me/build/
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Profiler output (large, regenerated)
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.sqlite
+
+# LaTeX intermediate files
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+
+# Raw results are regenerated per run; only results/sample_run is committed.
+/results/raw/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
