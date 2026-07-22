@@ -15,22 +15,29 @@ against both ceilings. Points whose intensity was computed from measured DRAM
 bytes are drawn differently from points that fall back to a theoretical byte
 count, so the reader always knows which is which.
 
-\begin{figure}[htbp]
+% [H] pins the figure exactly here. Left as a floating [htbp] it was pushed to a
+% page of its own and left the remainder of the page blank behind it.
+\begin{figure}[H]
   \centering
   \includegenerated{roofline_main.pdf}
   \caption{Kernel ladder on the RTX 5070 roofline, theoretical and measured
-    ceilings shown together.}
+    ceilings shown together. One label per kernel family gives the largest
+    problem size that family was run at.}
   \label{fig:roofline-main}
 \end{figure}
 
-\subsection{Timing summary}
-
-\inputgenerated{tables/timing_summary.tex}
-
 \subsection{Nsight Compute counters}
 
-The counters that explain each kernel's position, achieved and theoretical
-occupancy, DRAM bytes, shared memory bank conflicts, and warp execution
-efficiency, are collected for the curated subset below.
+The counters that explain each kernel's position, achieved occupancy, DRAM
+throughput, shared memory bank conflicts, and coalescing measured as sectors per
+request, are collected for the curated subset below. A perfectly coalesced warp
+moves 4 sectors per request for a 4 byte access and 16 for a \texttt{float4}, so
+the ideal depends on the access width and is not a single number.
 
-\inputgenerated{tables/ncu_counters.tex}
+\inputgeneratedwide{tables/ncu_counters.tex}
+
+\subsection{Timing summary}
+
+Every configuration in the sweep. The table runs over several pages.
+
+\inputgenerated{tables/timing_summary.tex}

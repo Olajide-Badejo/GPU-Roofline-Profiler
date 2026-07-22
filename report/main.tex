@@ -9,10 +9,12 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
+\usepackage{longtable}
 \usepackage{graphicx}
 \usepackage{siunitx}
 \usepackage{xcolor}
 \usepackage{caption}
+\usepackage{float}
 \usepackage[hidelinks]{hyperref}
 
 \graphicspath{{figures/}}
@@ -30,12 +32,45 @@
     \fbox{\parbox{0.9\linewidth}{\centering\vspace{2em}%
       \textcolor{red}{figure pending: \texttt{figures/\detokenize{#2}}}\vspace{2em}}}}}
 
-\title{GPU Roofline Profiler for the RTX 5070}
+% A generated table that is wider than the text block. Scaled down to fit rather
+% than allowed to run off the right of the page, which is what the Nsight
+% counter table with its seven columns would otherwise do.
+\newcommand{\inputgeneratedwide}[1]{%
+  \IfFileExists{#1}{\begin{center}\resizebox{\textwidth}{!}{\input{#1}}\end{center}}{%
+    \textcolor{red}{[pending pipeline output: \texttt{\detokenize{#1}}]}}}
+
+% A generated table set smaller. The appendix tables carry raw Nsight metric
+% names, some of them 49 characters with no break point, which overflow the text
+% block at the body font size. These cannot be scaled with resizebox because
+% they are longtables and span pages, so the font is reduced instead.
+\newcommand{\inputgeneratedsmall}[1]{%
+  \IfFileExists{#1}{{\footnotesize\input{#1}}}{%
+    \textcolor{red}{[pending pipeline output: \texttt{\detokenize{#1}}]}}}
+
+% Title metadata, which hyperref also puts in the PDF properties. The typeset
+% title page below is built by hand rather than by \maketitle, because the
+% default stacks title, author, and date together at the top of the page.
+\title{GPU Roofline Profiler}
 \author{Olajide Badejo}
 \date{\today}
 
 \begin{document}
-\maketitle
+
+% Title vertically and horizontally centred, with the byline pushed to the foot
+% of the page. The two \fill glues take up all the slack: equal amounts above
+% and below the title centre it, and whatever is left drops the author and date
+% to the bottom. \end{titlepage} starts the next page itself, so no \clearpage
+% follows it; adding one would insert a blank page.
+\begin{titlepage}
+  \centering
+  \vspace*{\fill}
+  {\LARGE\bfseries GPU Roofline Profiler\par}
+  \vspace*{\fill}
+  {\large Olajide Badejo\par}
+  \vspace{0.9em}
+  {\large \today\par}
+  \vspace{1.5cm}
+\end{titlepage}
 
 \begin{abstract}
 I measure the compute and memory ceilings of a single RTX 5070, place a ladder
@@ -47,9 +82,10 @@ and the gap between them is discussed rather than hidden. Every figure and table
 here is regenerated from raw results by one command; nothing is a spec sheet
 number presented as measured.
 \end{abstract}
+\clearpage
 
 \tableofcontents
-\newpage
+\clearpage
 
 \input{sections/introduction}
 \input{sections/roofline_background}

@@ -6,20 +6,22 @@ vector PDF for the report and, optionally, a raster PNG for the README. The
 plotting stays thin: all the arithmetic it draws comes from
 :mod:`roofline.model`, so a figure can never disagree with the tested math.
 
-On colour. A roofline is a scatter, which means every pair of series can end up
-adjacent on screen, so the palette is held to the all-pairs bar rather than the
-easier adjacent-pairs one. Two consequences shape the choices below.
+On colour. The GEMM ladder colours (red, yellow, pink, brown) and the lemon
+measured ceiling are chosen by the repo owner rather than derived from a
+validated palette. Two consequences are worth stating plainly.
 
-First, the GEMM ladder is not categorical data. Its rungs are *ordered* by how
-much reuse each one buys, so they get one hue in a light to dark ordinal ramp:
-the darker the point, the more optimised the kernel. That reads correctly at a
-glance and costs no categorical slots.
+The ladder's ordering is no longer carried by shade. An earlier version drew the
+five rungs as one hue from light to dark, so "more optimised" read as "darker"
+without needing the legend. With categorical hues that cue is gone and the
+reading rests on the legend order and the direct labels.
 
-Second, the remaining families take documented palette slots, and every series
-also carries a distinct marker shape. The shape is not decoration; it is the
-secondary encoding that keeps the series separable for a colourblind reader and
-in print, which is required once more than three series share a scatter.
-Identity is therefore never carried by colour alone.
+Lemon on a near white surface is a low contrast combination, and yellow for the
+tiled rung sits close to it in hue. The mitigations are that the ceilings are
+lines while the kernels are markers, so the two never compete for the same
+shape, that the measured ceiling is drawn thicker than it otherwise would be,
+and that every series still carries a distinct marker. Identity is never carried
+by colour alone, which is what keeps the figure readable in print and for a
+colourblind reader.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import matplotlib.patheffects as pe  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402  (backend must be set first)
 import numpy as np  # noqa: E402
 
@@ -47,13 +50,14 @@ GRIDLINE = "#e1e0d9"
 AXIS = "#c3c2b7"
 SURFACE = "#fcfcfb"
 
-# Blue ordinal ramp for the GEMM ladder, light to dark as optimisation rises.
-# Steps start at 250 so the lightest still clears contrast on the light surface.
-_BLUE_250 = "#86b6ef"
-_BLUE_350 = "#5598e7"
-_BLUE_450 = "#2a78d6"
-_BLUE_550 = "#1c5cab"
-_BLUE_700 = "#0d366b"
+# GEMM ladder colours, chosen by the repo owner. These are categorical rather
+# than an ordinal ramp, so the ladder's ordering is no longer carried by shade
+# and rests entirely on the legend order and the labels.
+_RED = "#d62728"
+_YELLOW = "#e8c400"
+_PINK = "#e377c2"
+_BROWN = "#8c564b"
+_NAVY = "#0d366b"
 
 # Categorical slots for the non GEMM families.
 _ORANGE = "#eb6834"
@@ -61,14 +65,20 @@ _AQUA = "#1baf7a"
 _VIOLET = "#4a3aa7"
 _MAGENTA = "#e87ba4"
 
+# Ceiling colours. Theoretical stays black; measured is lemon. Lemon is pale
+# against a near white surface, so that line is drawn thicker than it otherwise
+# would be to keep it legible.
+CEILING_THEORETICAL = "#0b0b0b"
+CEILING_MEASURED = "#e1e11a"
+
 # Fixed series styling. Assigned by identity and never cycled, so adding or
 # removing a kernel from a sweep cannot repaint the others.
 SERIES_STYLE: dict[str, tuple[str, str]] = {
-    "gemm_naive": (_BLUE_250, "o"),
-    "gemm_tiled": (_BLUE_350, "o"),
-    "gemm_register_blocked": (_BLUE_450, "o"),
-    "gemm_vectorized": (_BLUE_550, "o"),
-    "gemm_cublas": (_BLUE_700, "o"),
+    "gemm_naive": (_RED, "o"),
+    "gemm_tiled": (_YELLOW, "o"),
+    "gemm_register_blocked": (_PINK, "o"),
+    "gemm_vectorized": (_BROWN, "o"),
+    "gemm_cublas": (_NAVY, "o"),
     "saxpy": (_ORANGE, "s"),
     "reduction": (_AQUA, "^"),
     "gemv": (_VIOLET, "D"),
@@ -77,6 +87,26 @@ SERIES_STYLE: dict[str, tuple[str, str]] = {
 
 # Anything unrecognised is drawn in muted ink rather than inventing a new hue.
 _FALLBACK_STYLE = (INK_MUTED, "X")
+
+# Where each family's single direct label sits relative to its point, in points.
+# The memory bound families cluster tightly at the left of the axis and their
+# labels would otherwise sit on top of each other, so they are fanned out. The
+# cuBLAS label is pushed left because its point is near the right edge and the
+# text would run off the figure.
+SERIES_LABEL_OFFSET: dict[str, tuple[int, int]] = {
+    "saxpy": (-10, -20),
+    "reduction": (-10, 10),
+    "gemv": (12, 10),
+    "gemm_cublas": (-14, 14),
+    "transpose": (12, -20),
+}
+_DEFAULT_LABEL_OFFSET = (9, 5)
+
+# Families whose label is right aligned. The three memory bound families sit on
+# top of one another at the left of the axis, so two of them put their text to
+# the left of the marker and one to the right, which is what stops the boxes
+# from landing on each other or on a neighbouring marker.
+_RIGHT_ALIGNED = {"gemm_cublas", "saxpy", "reduction"}
 
 # Human readable series names for the legend.
 SERIES_LABEL: dict[str, str] = {
@@ -181,20 +211,31 @@ def _draw_ceilings(
     lo: float,
     hi: float,
 ) -> None:
-    # The two ceilings are the same quantity measured two ways, so they are
-    # distinguished by line style rather than by two unrelated hues.
-    styles = [("-", INK_PRIMARY), ("--", INK_SECONDARY)]
+    # Theoretical is black and solid, measured is lemon and dashed. The lemon
+    # line is drawn thicker because it is pale against the surface, and it is
+    # given a dark outline so it stays visible where it overlaps the black one.
+    styles = [
+        ("-", CEILING_THEORETICAL, 2.0),
+        ("--", CEILING_MEASURED, 3.0),
+    ]
     for index, ceiling in enumerate(ceilings):
-        style, colour = styles[index % len(styles)]
+        style, colour, width = styles[index % len(styles)]
         attainable = np.array([ceiling.attainable(ai) for ai in ai_grid]) / GIGA
+        path_effects = None
+        if colour == CEILING_MEASURED:
+            path_effects = [
+                pe.Stroke(linewidth=width + 1.2, foreground=INK_SECONDARY),
+                pe.Normal(),
+            ]
         ax.plot(
             ai_grid,
             attainable,
-            linewidth=2.0,
+            linewidth=width,
             linestyle=style,
             color=colour,
             label=f"{ceiling.label} ceiling",
             zorder=2,
+            path_effects=path_effects,
         )
         ridge = ceiling.ridge_point
         if lo <= ridge <= hi:
@@ -227,13 +268,38 @@ def _draw_points(ax: plt.Axes, points: list[RooflinePoint]) -> None:
         )
         for point in group:
             if point.annotate:
+                # Only one point per kernel family is labelled, and the label
+                # names the largest problem size that family was run at, with
+                # its unit. A label on every point produced the same text four
+                # or five times over and hid the shape of the data.
+                offset = SERIES_LABEL_OFFSET.get(series, _DEFAULT_LABEL_OFFSET)
                 ax.annotate(
                     point.label,
                     (point.arithmetic_intensity, point.achieved_gflops),
                     textcoords="offset points",
-                    xytext=(7, 3),
-                    fontsize=7,
-                    color=INK_SECONDARY,
+                    xytext=offset,
+                    fontsize=7.5,
+                    color=INK_PRIMARY,
+                    horizontalalignment=(
+                        "right" if series in _RIGHT_ALIGNED else "left"
+                    ),
+                    bbox={
+                        "boxstyle": "round,pad=0.25",
+                        "facecolor": SURFACE,
+                        "edgecolor": AXIS,
+                        "linewidth": 0.5,
+                        "alpha": 0.9,
+                    },
+                    # A leader line, because SAXPY and the reduction both top
+                    # out at the same element count, so two labels legitimately
+                    # read the same and the line is what says which is which.
+                    arrowprops={
+                        "arrowstyle": "-",
+                        "color": INK_MUTED,
+                        "linewidth": 0.6,
+                        "shrinkA": 1,
+                        "shrinkB": 3,
+                    },
                 )
 
 

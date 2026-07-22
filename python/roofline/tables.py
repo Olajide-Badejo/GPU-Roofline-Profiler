@@ -69,6 +69,83 @@ def dataframe_to_booktabs(
     return "\n".join(lines) + "\n"
 
 
+def dataframe_to_longtable(
+    frame: pd.DataFrame,
+    column_format: str | None = None,
+    float_format: str = "{:.2f}",
+    headers: dict[str, str] | None = None,
+    caption: str | None = None,
+    label: str | None = None,
+) -> str:
+    """Render a frame as a longtable, which breaks across pages.
+
+    A plain tabular is a single unbreakable box, so a long one runs off the
+    bottom of the page and is silently clipped. longtable repeats the header on
+    every page and marks continuations, which is what a multi page results table
+    needs. It is not a float, so it is placed where it is written rather than
+    drifting to the next page.
+    """
+    headers = headers or {}
+    n_cols = len(frame.columns)
+    if column_format is None:
+        column_format = "l" + "r" * (n_cols - 1)
+
+    header_cells = [
+        escape_latex(headers.get(str(col), str(col))) for col in frame.columns
+    ]
+    header_row = " & ".join(header_cells) + r" \\"
+
+    lines = [r"\begin{longtable}{" + column_format + "}"]
+    if caption is not None:
+        lines.append(r"\caption{" + escape_latex(caption) + "}")
+        if label is not None:
+            lines[-1] += r"\label{" + label + "}"
+        lines[-1] += r" \\"
+
+    # First page header.
+    lines += [r"\toprule", header_row, r"\midrule", r"\endfirsthead"]
+    # Header repeated on every continuation page.
+    lines += [
+        r"\multicolumn{" + str(n_cols) + r"}{l}{\small\itshape continued from "
+        r"previous page} \\",
+        r"\toprule",
+        header_row,
+        r"\midrule",
+        r"\endhead",
+    ]
+    # Footer on every page except the last.
+    lines += [
+        r"\midrule",
+        r"\multicolumn{" + str(n_cols) + r"}{r}{\small\itshape continued on "
+        r"next page} \\",
+        r"\endfoot",
+        r"\bottomrule",
+        r"\endlastfoot",
+    ]
+
+    for _, row in frame.iterrows():
+        cells = [_format_cell(value, float_format) for value in row]
+        lines.append(" & ".join(cells) + r" \\")
+
+    lines.append(r"\end{longtable}")
+    return "\n".join(lines) + "\n"
+
+
+def write_longtable(
+    frame: pd.DataFrame,
+    out_path: str | Path,
+    **kwargs: object,
+) -> Path:
+    """Render a frame as a page breaking longtable and write it atomically."""
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    content = dataframe_to_longtable(frame, **kwargs)  # type: ignore[arg-type]
+    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, out_path)
+    return out_path
+
+
 def write_table(
     frame: pd.DataFrame,
     out_path: str | Path,

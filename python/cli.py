@@ -134,17 +134,27 @@ def points_from_timing(
         return []
     frame = loaders.load_timing_csv(timing_path)
 
-    # Only the largest configuration of each series carries a direct label. A
-    # label on every point turns the figure into a wall of overlapping text and
-    # hides the very shape it is meant to show.
-    largest: dict[str, float] = {}
-    for _, row in frame.iterrows():
-        series = _series_key(row)
+    # Exactly one point per kernel FAMILY carries a direct label, not one per
+    # series. Labelling every series meant the five GEMM variants all printed
+    # the same "4096", and SAXPY, reduction, and GEMV all printed the same
+    # "67108864", because those families happen to top out at the same size. The
+    # legend already says which series is which; the label only needs to say how
+    # big the largest run was, once, per family.
+    #
+    # The labelled point is the fastest of the family's largest configurations,
+    # so the text sits at the top of its cluster where there is room for it.
+    best: dict[str, tuple[float, float, int]] = {}
+    for index, row in frame.iterrows():
+        family = str(row["kernel"])
         size = float(row.get("problem_size", 0.0) or 0.0)
-        largest[series] = max(largest.get(series, 0.0), size)
+        gflops = float(row.get("achieved_gflops", 0.0) or 0.0)
+        current = best.get(family)
+        if current is None or (size, gflops) > (current[0], current[1]):
+            best[family] = (size, gflops, int(index))
+    labelled_rows = {entry[2] for entry in best.values()}
 
     points: list[RooflinePoint] = []
-    for _, row in frame.iterrows():
+    for index, row in frame.iterrows():
         flops = float(row.get("flops", 0.0) or 0.0)
         theo_bytes = float(row.get("theoretical_bytes", 0.0) or 0.0)
         # Measured DRAM bytes come from the Nsight pass, which profiles one size
@@ -167,18 +177,61 @@ def points_from_timing(
             continue
         ai, source = resolve_intensity(flops, theo_bytes, meas_bytes)
         series = _series_key(row)
-        size = float(row.get("problem_size", 0.0) or 0.0)
         points.append(
             RooflinePoint(
                 series=series,
-                label=str(row["problem_size"]),
+                label=_size_label(row),
                 arithmetic_intensity=ai,
                 achieved_gflops=float(row["achieved_gflops"]),
                 intensity_source=source,
-                annotate=(size == largest.get(series)),
+                annotate=(int(index) in labelled_rows),
             )
         )
     return points
+
+
+def _size_label(row: object) -> str:
+    """Human readable problem size, with its unit.
+
+    The raw figure is a count, not a rate: 67108864 is 2^26 elements, which is
+    easy to misread as a throughput when it appears bare on a performance plot.
+    Vector kernels are labelled in elements and matrix kernels by their
+    dimensions, so the number can only be read as what it is.
+    """
+    kernel = str(row["kernel"])  # type: ignore[index]
+    if kernel in {"gemm", "transpose"}:
+        m = int(row.get("m", 0) or 0)  # type: ignore[union-attr]
+        n = int(row.get("n", 0) or 0)  # type: ignore[union-attr]
+        if m > 0 and n > 0:
+            return f"{m} x {n}"
+        size = int(float(row.get("problem_size", 0) or 0))  # type: ignore[union-attr]
+        return f"{size} x {size}"
+    if kernel == "gemv":
+        m = int(row.get("m", 0) or 0)  # type: ignore[union-attr]
+        n = int(row.get("n", 0) or 0)  # type: ignore[union-attr]
+        return f"{m} x {n} matrix"
+    count = float(row.get("problem_size", 0.0) or 0.0)  # type: ignore[union-attr]
+    return f"{_compact_count(count)} elements"
+
+
+def _compact_count(value: float) -> str:
+    """Render an element count compactly.
+
+    These sweeps use powers of two, so 67108864 is exactly 64 mebi. Binary units
+    render that as a round "64Mi" instead of the misleading "67.1089M" that
+    decimal units produce, and they are the honest unit for a power of two size.
+    Sizes that are not whole binary multiples fall back to decimal with three
+    significant figures.
+    """
+    count = int(value)
+    for unit, scale in (("Gi", 1 << 30), ("Mi", 1 << 20), ("ki", 1 << 10)):
+        if count >= scale and count % scale == 0:
+            return f"{count // scale}{unit}"
+    if value >= 1.0e6:
+        return f"{value / 1.0e6:.3g}M"
+    if value >= 1.0e3:
+        return f"{value / 1.0e3:.3g}k"
+    return f"{count}"
 
 
 # The size each kernel was profiled at, matching configs/sweep.yaml's ncu_subset
@@ -240,12 +293,13 @@ def regenerate(
         ceilings,
         figures_dir / "roofline_main.pdf",
         figures_dir / "roofline_main.png",
-        title="RTX 5070 roofline",
+        title="RTX 5070 roofline plot",
     )
     _write_timing_table(results_dir, tables_dir)
     _write_counter_table(ncu_dir, tables_dir)
     _write_ceilings_table(ceilings, tables_dir)
     _write_environment_table(results_dir, tables_dir)
+    _write_appendix_tables(results_dir, ncu_dir, tables_dir)
     print(f"wrote figures to {figures_dir} and tables to {tables_dir}")
     return 0
 
@@ -358,15 +412,24 @@ def _write_counter_table(ncu_dir: Path | None, tables_dir: Path) -> None:
             "dram_gbps",
         ]
     ].copy()
+    # Bank conflict counts run to hundreds of millions. Printed in full they
+    # push the table off the right of the page, so they are shown in millions,
+    # which is also the only precision anyone reads them at.
+    table["bank_conflicts"] = table["bank_conflicts"] / 1.0e6
+    # Headers are kept short for the same reason: this table has seven columns
+    # and the page is only so wide.
     tables.write_table(
         table,
         tables_dir / "ncu_counters.tex",
         float_format="{:.2f}",
+        # Headers are plain text: the writer escapes LaTeX specials itself, so
+        # pre-escaping a percent sign here would put a literal backslash in the
+        # rendered table.
         headers={
             "cell": "kernel",
-            "l2_hit_pct": "L2 hit \\%",
-            "occupancy_pct": "occupancy \\%",
-            "bank_conflicts": "bank conflicts",
+            "l2_hit_pct": "L2 hit %",
+            "occupancy_pct": "occupancy %",
+            "bank_conflicts": "conflicts (M)",
             "ld_sectors_per_request": "ld sec/req",
             "st_sectors_per_request": "st sec/req",
             "dram_gbps": "DRAM GB/s",
@@ -374,26 +437,139 @@ def _write_counter_table(ncu_dir: Path | None, tables_dir: Path) -> None:
     )
 
 
+def _write_appendix_tables(
+    results_dir: Path, ncu_dir: Path | None, tables_dir: Path
+) -> None:
+    """Write the three long appendix tables, all page breaking longtables.
+
+    These are the raw records behind the summaries in the body: every timing row
+    rather than a selection, and every Nsight metric rather than the derived
+    handful. They are long by nature, so a plain tabular would run off the page.
+    """
+    import pandas as pd
+
+    # A.1 full timing table: every row the sweep produced.
+    timing_path = results_dir / "timing.csv"
+    if timing_path.exists():
+        frame = loaders.load_timing_csv(timing_path)
+        columns = [
+            c
+            for c in (
+                "kernel",
+                "variant",
+                "problem_size",
+                "block_size",
+                "tile_dim",
+                "mean_ms",
+                "stddev_ms",
+                "achieved_gflops",
+                "achieved_gbps",
+            )
+            if c in frame.columns
+        ]
+        tables.write_longtable(
+            frame[columns],
+            tables_dir / "timing_full.tex",
+            float_format="{:.3f}",
+            headers={
+                "kernel": "kernel",
+                "variant": "variant",
+                "problem_size": "size",
+                "block_size": "block",
+                "tile_dim": "tile",
+                "mean_ms": "mean (ms)",
+                "stddev_ms": "sd (ms)",
+                "achieved_gflops": "GFLOP/s",
+                "achieved_gbps": "GB/s",
+            },
+        )
+
+    # A: full environment, from the manifest plus the recorded peaks.
+    manifest_path = results_dir / "manifest.json"
+    if manifest_path.exists():
+        import json
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        rows: list[tuple[str, str]] = []
+
+        def flatten(prefix: str, node: object) -> None:
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    flatten(f"{prefix}.{key}" if prefix else str(key), value)
+            else:
+                rows.append((prefix, str(node)))
+
+        flatten("", manifest)
+        tables.write_longtable(
+            pd.DataFrame(rows, columns=["field", "value"]),
+            tables_dir / "environment_full.tex",
+            column_format="ll",
+            headers={"field": "field", "value": "value"},
+        )
+
+    # A.2 full Nsight Compute metrics: every metric for every profiled cell.
+    if ncu_dir is not None and ncu_dir.exists():
+        from roofline import ncu as ncu_mod
+        from roofline.loaders import DataValidationError
+
+        try:
+            tidy = ncu_mod.parse_ncu_directory(ncu_dir)
+        except (DataValidationError, FileNotFoundError):
+            return
+        tidy = tidy[["cell", "metric_name", "metric_value"]].sort_values(
+            ["cell", "metric_name"]
+        )
+        tables.write_longtable(
+            tidy,
+            tables_dir / "ncu_full.tex",
+            column_format="llr",
+            float_format="{:.4g}",
+            headers={
+                "cell": "kernel",
+                "metric_name": "metric",
+                "metric_value": "value",
+            },
+        )
+
+
 def _write_timing_table(results_dir: Path, tables_dir: Path) -> None:
     timing_path = results_dir / "timing.csv"
     if not timing_path.exists():
         return
     frame = loaders.load_timing_csv(timing_path)
+    # The variant column is not optional here. Without it the five GEMM rows at
+    # each size are indistinguishable, and the whole point of the ladder is
+    # telling those five apart. The bandwidth column is included because the
+    # transpose rows do zero floating point work and would otherwise be a column
+    # of zeroes with nothing to say.
     columns = [
         c
-        for c in ("kernel", "problem_size", "mean_ms", "stddev_ms", "achieved_gflops")
+        for c in (
+            "kernel",
+            "variant",
+            "problem_size",
+            "mean_ms",
+            "stddev_ms",
+            "achieved_gflops",
+            "achieved_gbps",
+        )
         if c in frame.columns
     ]
-    tables.write_table(
+    # 62 rows does not fit on one page, and a plain tabular would simply run off
+    # the bottom and be clipped, so this one breaks across pages with a repeated
+    # header.
+    tables.write_longtable(
         frame[columns],
         tables_dir / "timing_summary.tex",
         float_format="{:.3f}",
         headers={
             "kernel": "kernel",
+            "variant": "variant",
             "problem_size": "size",
             "mean_ms": "mean (ms)",
             "stddev_ms": "sd (ms)",
             "achieved_gflops": "GFLOP/s",
+            "achieved_gbps": "GB/s",
         },
     )
 

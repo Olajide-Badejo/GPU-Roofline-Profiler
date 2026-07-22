@@ -8,6 +8,7 @@
 
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath}
+\usepackage{booktabs}
 \usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
 
@@ -16,17 +17,36 @@
 \date{\today}
 
 \begin{document}
-\maketitle
+
+% Same hand built title page as the main report: title centred both ways, byline
+% at the foot. \end{titlepage} already starts a new page, so no \clearpage here.
+\begin{titlepage}
+  \centering
+  \vspace*{\fill}
+  {\LARGE\bfseries GPU Roofline Profiler: Debug Report\par}
+  \vspace*{\fill}
+  {\large Olajide Badejo\par}
+  \vspace{0.9em}
+  {\large \today\par}
+  \vspace{1.5cm}
+\end{titlepage}
 
 \begin{abstract}
 This is the honest account of what went wrong while building the profiler and
 how I fixed it, grouped by theme rather than by date. The dated raw material
-lives in \texttt{docs/ENGINEERING\_LOG.md}; this document is the postmortem that
-draws the lessons out of it.
+lives in \texttt{docs/\allowbreak ENGINEERING\_LOG.md}; this document is the
+postmortem that draws the lessons out of it.
+
+A theme runs through most of these. The failures that cost the most time were not
+the ones that produced an error message. They were the ones that produced a
+plausible looking number: a profiler that collected nothing and said nothing, a
+manifest that no parser could read, a metric that flattered the wrong thing, an
+optimisation that quietly targeted the wrong GPU architecture.
 \end{abstract}
+\clearpage
 
 \tableofcontents
-\newpage
+\clearpage
 
 \section{Environment and tooling}
 
@@ -45,7 +65,7 @@ response was the one the spec mandates, to stop and ask before running large
 installers that need elevated permissions, rather than to guess. In the meantime
 I built every part of the project that does not need a compiler, so the wait was
 not idle: the repository scaffold, the dash lint, the Python analysis package
-with its tests, and these report skeletons all came first.
+with its tests, and the report skeletons all came first.
 
 \subsection{The Python pins predated the interpreter}
 
@@ -57,47 +77,287 @@ that do ship 3.14 wheels and to re-pin \texttt{requirements.txt} to exactly thos
 versions. Pinning to what actually installs and passes on this box is more honest
 than pinning to an aspiration that cannot be built here.
 
+\subsection{CUDA 13 removed the clock properties}
+
+A trivial smoke test would not compile: \texttt{cudaDeviceProp} has no member
+\texttt{clockRate}, and none named \texttt{memoryClockRate} either. CUDA 13
+removed both. They were deprecated through 12.x and are now gone.
+
+This mattered well beyond a smoke test, because the theoretical peak derivation
+needs the SM clock and the memory clock, so the entire ceiling calculation rested
+on two fields that no longer exist. The fix is to read them through
+\texttt{cudaDeviceGetAttribute}, which still supports them, and to check the
+returned status so that a future removal fails loudly rather than yielding a
+silent zero and a peak of zero.
+
+The check that the replacement is right: 48 SMs at 128 lanes is 6144 CUDA cores,
+matching the vendor reference exactly, and at 2.625 GHz that gives 32.3 TFLOP/s
+against a vendor quote near 31. The 192 bit bus at 14.001 GHz doubled for the
+data rate gives 672.0 GB/s against a vendor quote of 672. Both landing on the
+reference numbers is what says the formulas are right.
+
+\subsection{The build silently targeted the wrong GPU}
+
+The first successful CMake configure printed \texttt{CUDA architectures: 75}. The
+card is sm\_120.
+
+I had set \texttt{CMAKE\_CUDA\_ARCHITECTURES} inside an
+\texttt{if(NOT DEFINED ...)} guard placed after \texttt{project()}. Enabling the
+CUDA language in \texttt{project()} installs a default of its own, so by the time
+my guard ran the variable was already defined and my detection never executed.
+
+This is the quiet, expensive kind of bug. Nothing fails. The build just compiles
+for an older architecture than the card, and every performance number that
+followed would have been measured on code generated for the wrong target. The fix
+is to choose the architecture before \texttt{project()}. I verified it afterwards
+with \texttt{cuobjdump}, which now reports \texttt{sm\_120} SASS in every kernel
+object rather than trusting the configure message a second time.
+
+\subsection{A dependency that CMake 4 refuses to configure}
+
+\texttt{FetchContent} pulled yaml-cpp 0.8.0 and configure failed: compatibility
+with CMake below 3.5 has been removed, and this machine has CMake 4.3.1. I scoped
+a \texttt{CMAKE\_POLICY\_VERSION\_MINIMUM} shim around that one dependency and
+unset it immediately after, so the compatibility relaxation applies to the fetched
+subproject and not to mine. Vendoring a patched copy would have been a
+maintenance burden for the same result, and hand writing a YAML parser to dodge
+one upstream version declaration would have been a poor trade.
+
+\subsection{NVTX broke the build through windows.h}
+
+Enabling NVTX turned a clean build into a syntax error in
+\texttt{timing.hpp}, a file that had not changed and that has nothing to do with
+profiling. \texttt{nvtx3/nvToolsExt.h} includes \texttt{windows.h}, which defines
+\texttt{min} and \texttt{max} as preprocessor macros, and the offending line is
+\texttt{std::max(1, std::min(wanted, max\_launches))}. Once those are macros the
+expression stops parsing, and the error points at the victim rather than the
+culprit. Defining \texttt{NOMINMAX} next to the include that causes the problem
+fixes it and keeps the fix where the next person will look.
+
+Alongside it, the CMake probe for NVTX tested \texttt{EXISTS} against
+\texttt{CUDAToolkit\_INCLUDE\_DIRS}, which is a \emph{list} of two directories
+rather than one path, so it silently reported "NVTX not found" on a machine where
+the header was plainly present. \texttt{find\_path} searches the list properly.
+
 \section{Measurement methodology}
 
-To be written as the timing and profiling passes run on the hardware. The entries
-expected here concern warmup and batching decisions, run to run variance on a
-boost clocked card, and the difference between theoretical and measured ceilings.
+\subsection{NVML explained a ceiling that looked impossible}
+
+The measured FP32 peak came out at 33.5 TFLOP/s against a theoretical 32.26, or
+104 percent of a number nothing is supposed to exceed.
+
+The NVML trace settles it. The log records an SM clock averaging 2857 MHz and
+peaking at 2865 MHz under load, while \texttt{cudaDevAttrClockRate} reports 2625
+MHz. The runtime reports a nominal boost clock; the card boosts past it.
+Recomputing at the observed clock gives 35.2 TFLOP/s, and the measured figure is
+then 95 percent of it, exactly where a good FMA microbenchmark should land.
+
+I changed nothing in the derivation. The theoretical ceiling stays derived from
+the clock the runtime reports, because that is the reproducible definition, and
+the report says plainly that the measured ceiling exceeds it and why. This is
+precisely the case the NVML monitor exists for: without the clock trace this
+would have looked like a counting bug and I would have gone hunting a factor of
+two that was never there.
+
+\subsection{Small kernels were measuring cache, not DRAM}
+
+SAXPY at 4 million elements reported 1583 GB/s of achieved bandwidth against a
+theoretical DRAM bandwidth of 672. At that size the two vectors total 32 MB and
+fit inside this card's 48 MB L2, so after warmup the kernel never touches DRAM and
+the figure is L2 bandwidth wearing a DRAM label. Past the cache the numbers
+behave: 560 to 566 GB/s at 16 and 64 million elements.
+
+The lesson is about the byte count rather than the timing. An achieved bandwidth
+computed from a \emph{theoretical} byte count assumes every byte comes from DRAM,
+and silently overstates DRAM traffic when it does not. This is the gap the whole
+project is about, and it is why every point on the roofline is labelled with which
+byte count produced its intensity.
+
+\subsection{The shared memory tiling that did not pay}
+
+I expected the naive GEMM to be memory bound and tiling to fix it. Across every
+size measured, the tiled kernel is no faster than the naive one and at the
+smaller sizes it is slower.
+
+The counters explain it. Naive and tiled report L2 hit rates equal to within
+measurement noise, and both move DRAM traffic at 5 to 8 GB/s against a 604 GB/s
+ceiling, so neither is close to memory bound. The naive kernel would move 68.7 GB
+if every operand read reached memory; it actually moves 80.8 MB, so cache absorbs
+better than 99.8 percent of its redundant loads. Tiling exists to remove redundant
+DRAM traffic and there is essentially none left to remove, while it still costs a
+synchronisation per tile step. The optimisation targets a bottleneck this hardware
+no longer has at this problem size.
+
+What binds the naive kernel instead is instruction throughput: 98.5 percent of
+peak sustained SM throughput while achieving under 2 TFLOP/s of useful arithmetic.
+The fix is not to move data less far but to ask for it fewer times, which is what
+register blocking does, and that rung is nearly four times faster.
+
+I record this as the most useful result in the project. It is the one place where
+measuring contradicted the textbook expectation, and the counters rather than the
+narrative decided it.
 
 \section{Kernel correctness}
 
-To be written as each kernel is validated against its CPU and cuBLAS reference.
-The entries expected here concern floating point accumulation order and the
-tolerance chosen for the large GEMM comparison.
+\subsection{The tolerance was wrong, not the GEMM}
+
+Every GEMM variant failed its correctness test at every size: naive, tiled,
+register blocked, vectorized, and cuBLAS.
+
+The clue that mattered was that all five reported the \emph{identical} error to
+sixteen digits, and one of the five was cuBLAS. Five independent implementations
+do not share a bug. They do share a reference and an error metric.
+
+My metric was a per element relative error, dividing each deviation by
+\texttt{max(|expected|, 1e-3)}. With random operands in $[-1, 1]$ each GEMM output
+is a sum of $k$ signed products, so a good fraction of the entries land near zero
+through cancellation, and dividing an ordinary absolute error by one of those
+produces a huge ratio that measures the cancellation rather than the kernel.
+
+Before changing anything I checked the arithmetic: a reported 3.2e-3 against the
+1e-3 floor means an absolute error near 3.2e-6, while a 512 term sum of products
+of values in $[-1, 1]$ has magnitude around 13. That is a true relative error near
+2.5e-7, which is fp32 epsilon. The kernels were right the whole time.
+
+The fix was a normwise relative error, the largest absolute deviation over the
+largest magnitude in the reference, which is the standard way to check a GEMM and
+does not lose meaning near zero. I deliberately did not simply loosen the
+tolerance: that would have hidden the real problem behind a number chosen to make
+tests pass, and would then have been too loose to catch an actual bug at large
+$k$.
+
+\subsection{The counters found a bug in my own kernels}
+
+With the DRAM metrics finally collecting, the shared memory bank conflict counter
+read 134.5 million for the register blocked GEMM and 93.4 million for the
+vectorized one, against 40 thousand for the tiled transpose.
+
+I had applied the classic \texttt{[TILE][TILE + 1]} padding to the transpose tile,
+written a comment about why it matters, and then declared every GEMM shared tile
+unpadded. The register blocked inner loop walks down a column of its tile, so the
+address advances by a whole row per step; with an unpadded row length of 16 that
+stride is a multiple of the 32 bank width and the warp serialises on one bank. I
+had written the fix once and failed to apply it where it mattered most.
+
+The fix carries a trap. The vectorized kernel reads its tile with a
+\texttt{float4}, so row starts must stay 16 byte aligned; padding by one float
+makes the row stride 260 bytes and turns an aligned vector load into undefined
+behaviour rather than a slow path. Padding by four floats preserves alignment and
+still moves each row off the colliding bank.
+
+The measured outcome was not the clean sweep I expected. All 39 correctness tests
+still pass, and at 4096 the vectorized kernel gained 18 percent, from 8746 to
+10325 GFLOP/s, while the register blocked and tiled kernels did not move outside
+run to run noise. Bank conflicts were the binding constraint in only one of the
+three. I am reporting that rather than implying the optimisation helped
+everywhere.
 
 \section{Profiling tooling}
 
-\subsection{A timestamp parser that was too strict, then not strict enough}
+\subsection{Nsight Compute collected nothing, convincingly}
 
-The NVML loader parses sample timestamps to real datetimes so timing rows can be
-joined to power and clock samples. The first version let pandas infer the format
-per element, which is slow and, under pandas 3.0, quietly failed on a sample that
-mixed timestamps with and without fractional seconds: one row parsed, the next
-became \texttt{NaT}. The fix was to pin the parser to ISO 8601, which accepts both
-precisions consistently and rejects genuinely malformed input loudly instead of
-silently. The lesson generalizes: a loader that is meant to reject bad data has to
-be tested with bad data, which is why the loader tests feed it broken rows on
-purpose.
+The first \texttt{ncu} run looked like a success. It attached to the process,
+reported the kernel by name with its grid and block dimensions, ran the kernel,
+and disconnected cleanly. Every metric value was \texttt{n/a}.
 
-Further profiling tooling entries, in particular the Nsight Compute metric name
-mapping and how it shifts between tool versions, will be added once the profiling
-pass runs on this machine.
+This is the most dangerous failure mode in the whole pipeline, because nothing
+errors. A CSV full of \texttt{n/a} parses perfectly well, and piped straight into
+the analysis it would have produced a report whose counter columns were empty for
+a reason nobody had noticed.
+
+The cause is that on Windows the NVIDIA driver restricts GPU performance counters
+to administrators unless \texttt{RmProfilingAdminOnly} is set to 0 in the
+registry. The value was not set at all, so the driver default applied, and the
+shell was not elevated. This is the counter access caveat the spec warns about for
+WSL2, and it bites on native Windows too.
+
+The wrapper script now checks for elevation up front and refuses with an
+explanation rather than producing a directory of \texttt{n/a}. I did not set the
+registry value: it is a permanent, system wide relaxation of who may read GPU
+counters, and that is the machine owner's decision to make deliberately rather
+than a side effect of my wanting a profile. Nsight Systems, worth noting, needs no
+elevation at all for CUDA and NVTX tracing.
+
+\subsection{The metric names in the documentation do not exist here}
+
+With elevation, most counters collected, and the two that mattered most did not:
+\texttt{dram\_\_bytes\_\allowbreak read.sum} and
+\texttt{dram\_\_bytes\_\allowbreak write.sum} still
+returned \texttt{n/a}. Those are the names in most published examples. On this
+chip the counters carry an \texttt{\_op\_} infix, and \texttt{ncu} does not reject
+an unsupported metric name: it accepts it, profiles the kernel, and reports
+\texttt{n/a}, producing a well formed CSV empty of the thing requested.
+
+Reading \texttt{ncu -{}-query-metrics} on the machine, rather than trusting
+documentation, gave the real names. The verified mapping is now recorded in
+\texttt{docs/profiling\_guide.md} against the exact tool version, and the wrapper
+counts \texttt{n/a} values after every pass and warns with the offending metric
+names, so this specific silence can never happen twice.
+
+\subsection{Two ways to be wrong about a percentage}
+
+Folding the parsed metrics into per cell summaries, I aggregated everything the
+same way. Counters and percentages are not the same kind of quantity: profiling
+several launches and adding their byte counts gives the total traffic, which is
+what we want, but adding two L2 hit rates of 97 percent does not give 194 percent
+of anything. Extensive metrics now sum and intensive ones average.
+
+That fix exposed a second thing, which is not a bug of mine. The naive GEMM
+reports an L2 sector hit rate of 100.39 percent. A hit rate is hits over accesses
+and cannot exceed 1. Re-running the same kernel gave 97.02, so it is noise in how
+the hardware attributes sector hits.
+
+I chose to keep the value verbatim and flag it rather than clamp it to 100.
+Silently rewriting a measurement so it looks respectable is exactly the kind of
+quiet dishonesty this project exists to avoid, and a reader who sees 100.39 with a
+note attached learns something true about hardware counters that a tidy 100.00
+would have hidden.
 
 \section{Report pipeline}
 
 \subsection{Underscores in a placeholder path broke the compile}
 
-The main report guards every generated figure and table with a macro that prints
-a visible placeholder when the artifact does not exist yet, so the document
-compiles before and after the pipeline runs. The first version printed the
-missing path inside \texttt{\textbackslash texttt}, and the paths contain
-underscores, which LaTeX reads as math subscripts in text mode and refuses to
-typeset. Wrapping the path in \texttt{\textbackslash detokenize} renders the
-underscores literally and the guard compiles cleanly whether or not the artifact
-is present.
+The main report guards every generated figure and table with a macro that prints a
+visible placeholder when the artifact does not exist yet, so the document compiles
+before and after the pipeline runs. The first version printed the missing path
+inside \texttt{\textbackslash texttt}, and the paths contain underscores, which
+LaTeX reads as math subscripts in text mode and refuses to typeset. Wrapping the
+path in \texttt{\textbackslash detokenize} renders them literally.
+
+\subsection{Every manifest was invalid JSON}
+
+Generating the environment appendix from the run manifest threw a JSON decode
+error: invalid escape. The driver wrote
+\texttt{"config\_path": "configs\textbackslash sweep.yaml"} straight into the
+document, and on Windows the path separator is a backslash, so
+\texttt{\textbackslash s} is not a legal JSON escape and the whole file is
+malformed. The device name went out unescaped too.
+
+This mattered more than it looks. The project's own rule is that results without a
+manifest do not exist, and an unparseable manifest is exactly as useless as a
+missing one. Every run up to that point carried one. Nothing had noticed because
+nothing had tried to read a manifest back until the report appendix needed it, and
+the file looked perfectly reasonable to a human eye.
+
+The fix is a \texttt{json\_escape} helper applied to every string written into the
+manifest. The wider lesson: hand rolling JSON with a stream operator is fine for a
+fixed schema right up until a value contains a character the format reserves.
+
+\subsection{Tables that ran off the page}
+
+Two layout faults, both of the kind that a compile without errors will happily
+ship. The timing summary is 62 rows, and a plain \texttt{tabular} is a single
+unbreakable box, so it ran off the bottom of the page and was clipped rather than
+continued. It is now a \texttt{longtable}, which repeats its header and marks
+continuations. The Nsight counter table has seven columns and ran off the right
+margin instead; it is scaled to the text width. The appendix tables carry raw
+metric names up to 49 characters with no break point, so they are set smaller
+rather than scaled, because a \texttt{longtable} spanning pages cannot be put
+inside a scaling box.
+
+The general point is that LaTeX reports overfull boxes as warnings, not errors, so
+a report can compile cleanly and still be unreadable. Checking the log for
+overfull boxes is now part of judging whether a build is good, not just whether it
+finished.
 
 \end{document}

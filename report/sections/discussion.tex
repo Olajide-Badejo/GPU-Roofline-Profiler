@@ -134,12 +134,12 @@ buys.
 \subsection{Thermals and clocks}
 
 The NVML trace resolves one anomaly outright. The measured FP32 ceiling came out
-at \SI{33.5}{TFLOP/s} against a theoretical \SI{32.26}{TFLOP/s}, which is 104
-percent of a number that should be an upper bound. The clock trace shows the card
-running at 2857\,MHz on average and 2865\,MHz at peak under load, while the CUDA
-runtime reports a nominal 2625\,MHz. Recomputing the ceiling at the clock the card
-actually ran gives \SI{35.2}{TFLOP/s}, and the microbenchmark then sits at 95
-percent of it, which is where a good FMA loop belongs.
+at 33.5 against a theoretical 32.26 TFLOP/s. That is 104 percent of a number
+which should be an upper bound. The clock trace shows the card running at 2857
+MHz on average, and 2865 MHz at peak under load, while the CUDA runtime reports
+a nominal 2625 MHz. Recomputing the ceiling at the clock the card actually ran
+gives 35.2 TFLOP/s, and the microbenchmark then sits at 95 percent of it, which
+is where a good FMA loop belongs.
 
 I have left the theoretical ceiling derived from the reported clock, because that
 is the reproducible definition, and said here that the card exceeds it. Without
