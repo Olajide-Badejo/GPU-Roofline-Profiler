@@ -45,19 +45,21 @@ jobs:
           apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - name: compile every kernel and profiling unit, compile only
+        # The CUDA container runs this under sh (dash), not bash, so this stays
+        # POSIX: find instead of a bash nullglob array, and no shopt.
         run: |
           set -e
-          shopt -s nullglob
-          files=(src/kernels/*.cu src/profiling/*.cu)
-          if [ ${#files[@]} -eq 0 ]; then
+          count=0
+          for f in $(find src/kernels src/profiling -name '*.cu' | sort); do
+            echo "compiling $f"
+            nvcc -std=c++17 -arch=sm_120 -Isrc/include -c "$f" -o /dev/null
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
             echo "no .cu sources found"
             exit 1
           fi
-          for f in "${files[@]}"; do
-            echo "compiling $f"
-            nvcc -std=c++17 -arch=sm_120 -Isrc/include -c "$f" -o /dev/null
-          done
-          echo "all ${#files[@]} translation units compiled clean"
+          echo "$count translation units compiled clean"
 
   report:
     name: rebuild report from sample data
