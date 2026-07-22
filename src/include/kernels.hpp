@@ -43,6 +43,48 @@ void launch_transpose_naive(const float* in, float* out, int rows, int cols,
 void launch_transpose_tiled(const float* in, float* out, int rows, int cols,
                             int tile_dim, cudaStream_t stream = nullptr);
 
+// y := A * x, with A being m by n in row major order. 2*m*n FLOPs. Each matrix
+// element is read once and feeds one multiply add, so reuse is low and this
+// sits mid axis, between the streaming kernels and the GEMM ladder.
+void launch_gemv(const float* a, const float* x, float* y, int m, int n,
+                 int block_size, cudaStream_t stream = nullptr);
+
+// The GEMM ladder. All compute C := A * B with A being m by k, B being k by n,
+// and C being m by n, every matrix row major. 2*m*n*k FLOPs.
+//
+// Each rung raises reuse over the one before it, and the roofline shows
+// arithmetic intensity and achieved performance climbing together as it does.
+
+// Every operand read straight from global memory, so each value is refetched
+// many times. The memory bound bottom of the ladder.
+void launch_gemm_naive(const float* a, const float* b, float* c, int m, int n,
+                       int k, int tile_dim, cudaStream_t stream = nullptr);
+
+// Tiles of A and B staged in shared memory once and reused across the tile.
+void launch_gemm_tiled(const float* a, const float* b, float* c, int m, int n,
+                       int k, int tile_dim, cudaStream_t stream = nullptr);
+
+// Each thread computes a small output tile held in registers, raising reuse per
+// shared memory load at the cost of register pressure.
+void launch_gemm_register_blocked(const float* a, const float* b, float* c,
+                                  int m, int n, int k,
+                                  cudaStream_t stream = nullptr);
+
+// The register blocked kernel with float4 loads and stores, so each memory
+// instruction moves four values. Requires k and n to be multiples of four;
+// returns false without launching when they are not, so the caller can skip the
+// configuration rather than read past the end of an array.
+bool launch_gemm_vectorized(const float* a, const float* b, float* c, int m,
+                            int n, int k, cudaStream_t stream = nullptr);
+
+// The vendor reference. Plotted as an honest ceiling, labeled as a library
+// rather than as one of my kernels. The handle is created once and reused,
+// because creating one per launch would time cuBLAS setup instead of its GEMM.
+void gemm_cublas_init();
+void gemm_cublas_destroy();
+void launch_gemm_cublas(const float* a, const float* b, float* c, int m, int n,
+                        int k, cudaStream_t stream = nullptr);
+
 }  // namespace roofline
 
 #endif  // ROOFLINE_KERNELS_HPP

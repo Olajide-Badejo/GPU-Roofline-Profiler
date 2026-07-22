@@ -210,6 +210,45 @@ shim applies to the fetched dependency and not to my own project. Hand writing a
 YAML parser to dodge one upstream version declaration would have been a poor
 trade, and vendoring a patched copy is a maintenance burden for the same result.
 
+## 2026-07-22 The GEMM tolerance was wrong, not the GEMM
+
+**Symptom.** Every GEMM variant failed its correctness test at every size:
+naive, tiled, register blocked, vectorized, and cuBLAS. Measured error against
+a tolerance of 1e-4 was about 3.2e-3 at 512 and 2.3e-4 at 64.
+
+**The clue that mattered.** All five variants reported the *identical* error to
+sixteen digits, and one of the five was cuBLAS. Five independent implementations
+do not share a bug. They do share a reference and an error metric, so the fault
+had to be in one of those.
+
+**Root cause.** My metric was a per element relative error, dividing each
+deviation by `max(|expected|, 1e-3)`. With random operands in [-1, 1] each GEMM
+output is a sum of k signed products, so a good fraction of the entries land near
+zero through cancellation. Dividing a perfectly ordinary absolute error by one of
+those near zero values produces a huge ratio that measures the cancellation, not
+the kernel. The metric was reporting on the test data rather than on the code.
+
+**Checking the arithmetic before changing anything.** Working backward from the
+512 case: a reported 3.2e-3 against the 1e-3 floor means an absolute error near
+3.2e-6, while a 512 term sum of products of values in [-1, 1] has magnitude
+around 13. That is a true relative error near 2.5e-7, which is fp32 epsilon. The
+kernels were right the whole time.
+
+**Fix.** Switched to a normwise relative error: the largest absolute deviation
+anywhere in the matrix over the largest magnitude in the reference. This is the
+standard way to check a GEMM and it does not lose its meaning near zero. It still
+catches genuine defects, because an indexing or tiling bug produces an error of
+order 1 relative to the norm, not of order 1e-6.
+
+**Why not just loosen the tolerance.** Because that would have hidden the real
+problem behind a number chosen to make tests pass, and the tolerance would then
+have been too loose to catch an actual bug at large k. The metric was wrong, so I
+fixed the metric.
+
+**Verification.** All 36 GPU correctness tests pass, covering GEMV and all five
+GEMM rungs across square, rectangular, tile aligned, and deliberately unaligned
+shapes, plus a 512 case checked against cuBLAS rather than a host triple loop.
+
 ## 2026-07-22 Checkpoint while the toolchain was still missing
 
 Recorded at the pause before the toolchain was installed. Kept as written,
