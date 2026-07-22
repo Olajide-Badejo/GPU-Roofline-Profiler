@@ -19,6 +19,6 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-from roofline import loaders, model, plotting, tables
+from roofline import loaders, model, ncu, plotting, tables
 
-__all__ = ["model", "loaders", "plotting", "tables", "__version__"]
+__all__ = ["model", "loaders", "ncu", "plotting", "tables", "__version__"]

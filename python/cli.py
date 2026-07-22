@@ -49,7 +49,52 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="optional peaks CSV with theoretical and measured ceilings",
     )
+    parser.add_argument(
+        "--ncu",
+        type=Path,
+        default=None,
+        help="optional Nsight Compute output directory, for measured DRAM bytes",
+    )
     return parser
+
+
+# Maps an ncu cell name onto the (kernel, variant) it profiled, so measured
+# bytes can be attached to the right timing rows. The ncu subset deliberately
+# profiles one size per cell, so the join is on identity rather than on size.
+NCU_CELL_TO_SERIES = {
+    "saxpy": ("saxpy", ""),
+    "transpose_naive": ("transpose", "naive"),
+    "transpose_tiled": ("transpose", "tiled"),
+    "gemm_naive": ("gemm", "naive"),
+    "gemm_tiled": ("gemm", "tiled"),
+    "gemm_register_blocked": ("gemm", "register_blocked"),
+    "gemm_vectorized": ("gemm", "vectorized"),
+}
+
+
+def load_measured_bytes(ncu_dir: Path | None) -> dict[tuple[str, str], float]:
+    """Return measured DRAM bytes keyed by (kernel, variant).
+
+    Absent or unreadable Nsight output is not an error: the analysis simply falls
+    back to theoretical byte counts and labels every affected point as such.
+    """
+    if ncu_dir is None or not ncu_dir.exists():
+        return {}
+    from roofline import ncu as ncu_mod
+    from roofline.loaders import DataValidationError
+
+    try:
+        summary = ncu_mod.summarize_cells(ncu_mod.parse_ncu_directory(ncu_dir))
+    except (DataValidationError, FileNotFoundError) as exc:
+        print(f"note: no usable Nsight Compute data ({exc}); using theoretical bytes")
+        return {}
+
+    measured: dict[tuple[str, str], float] = {}
+    for _, row in summary.iterrows():
+        key = NCU_CELL_TO_SERIES.get(str(row["cell"]))
+        if key is not None and float(row["measured_bytes"]) > 0.0:
+            measured[key] = float(row["measured_bytes"])
+    return measured
 
 
 def load_ceilings(peaks_path: Path | None) -> list[Ceilings]:
@@ -76,7 +121,9 @@ def load_ceilings(peaks_path: Path | None) -> list[Ceilings]:
     return ceilings
 
 
-def points_from_timing(results_dir: Path) -> list[RooflinePoint]:
+def points_from_timing(
+    results_dir: Path, measured: dict[tuple[str, str], float] | None = None
+) -> list[RooflinePoint]:
     """Turn each timing row into a labeled roofline point.
 
     Uses measured bytes and flops columns when the driver and Nsight passes have
@@ -100,10 +147,19 @@ def points_from_timing(results_dir: Path) -> list[RooflinePoint]:
     for _, row in frame.iterrows():
         flops = float(row.get("flops", 0.0) or 0.0)
         theo_bytes = float(row.get("theoretical_bytes", 0.0) or 0.0)
-        meas_bytes = row.get("measured_bytes", None)
-        meas_bytes = None if meas_bytes is None or meas_bytes != meas_bytes else float(
-            meas_bytes
-        )
+        # Measured DRAM bytes come from the Nsight pass, which profiles one size
+        # per kernel. They are applied only to the row whose size was actually
+        # profiled, so no point ever claims a measurement taken at another size.
+        meas_bytes = None
+        if measured:
+            key = (str(row["kernel"]), str(row.get("variant", "") or ""))
+            if key not in measured:
+                key = (str(row["kernel"]), "")
+            candidate = measured.get(key)
+            if candidate is not None and float(
+                row.get("problem_size", 0.0) or 0.0
+            ) == _profiled_size(str(row["kernel"])):
+                meas_bytes = candidate
         if flops <= 0.0 or theo_bytes <= 0.0:
             # A transpose does no floating point work, so it has no place on an
             # arithmetic intensity axis at all. It is reported on the bandwidth
@@ -125,6 +181,16 @@ def points_from_timing(results_dir: Path) -> list[RooflinePoint]:
     return points
 
 
+# The size each kernel was profiled at, matching configs/sweep.yaml's ncu_subset
+# and the reduced sweep the ncu wrapper generates.
+_PROFILED_SIZES = {"saxpy": 16777216.0, "transpose": 2048.0, "gemm": 2048.0}
+
+
+def _profiled_size(kernel: str) -> float:
+    """Problem size the Nsight pass profiled for this kernel, or NaN if none."""
+    return _PROFILED_SIZES.get(kernel, float("nan"))
+
+
 def _series_key(row: object) -> str:
     """Identity used for colour and marker: kernel, plus variant for GEMM.
 
@@ -139,13 +205,21 @@ def _series_key(row: object) -> str:
     return kernel
 
 
-def regenerate(results_dir: Path, report_dir: Path, peaks_path: Path | None) -> int:
+def regenerate(
+    results_dir: Path,
+    report_dir: Path,
+    peaks_path: Path | None,
+    ncu_dir: Path | None = None,
+) -> int:
     """Regenerate all figures and tables. Returns a process exit code."""
     figures_dir = report_dir / "figures"
     tables_dir = report_dir / "tables"
 
     ceilings = load_ceilings(peaks_path)
-    points = points_from_timing(results_dir)
+    measured = load_measured_bytes(ncu_dir)
+    if measured:
+        print(f"using measured DRAM bytes for {len(measured)} profiled kernels")
+    points = points_from_timing(results_dir, measured)
 
     if not ceilings or not points:
         print(
@@ -198,7 +272,7 @@ def _write_timing_table(results_dir: Path, tables_dir: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return regenerate(args.results, args.report, args.peaks)
+    return regenerate(args.results, args.report, args.peaks, args.ncu)
 
 
 if __name__ == "__main__":

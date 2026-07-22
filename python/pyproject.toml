@@ -28,3 +28,9 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The ncu fixtures are verbatim Nsight Compute CSV output. Its header is 174
+# characters wide and wrapping it would mean the test no longer exercises the
+# real format, which is the entire point of the fixture.
+"tests/test_ncu.py" = ["E501"]
