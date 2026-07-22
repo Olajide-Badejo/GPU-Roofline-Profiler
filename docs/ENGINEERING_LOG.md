@@ -210,6 +210,44 @@ shim applies to the fetched dependency and not to my own project. Hand writing a
 YAML parser to dodge one upstream version declaration would have been a poor
 trade, and vendoring a patched copy is a maintenance burden for the same result.
 
+## 2026-07-22 The counters found a bug in my own kernels
+
+**What the counters said.** With DRAM metrics finally collecting, the shared
+memory bank conflict counter read 134.5 million for the register blocked GEMM and
+93.4 million for the vectorized one, against 40 thousand for the tiled transpose.
+
+**Root cause.** I applied the classic `[TILE][TILE + 1]` padding to the transpose
+tile, wrote a comment about why it matters, and then declared every GEMM shared
+tile unpadded. The register blocked inner loop reads
+`as[threadIdx.y * kTM + i][kk]`, which walks down a column: the address advances
+by a whole row per step, and with an unpadded row length of 16 that stride is a
+multiple of the 32 bank width, so the warp collides on one bank. I had written
+the fix once and failed to apply it where it mattered most.
+
+**A trap in the fix.** The vectorized kernel reads `bs` with a `float4`, so every
+row start has to stay 16 byte aligned. Padding it by one float makes the row
+stride 65 floats, or 260 bytes, and a `float4` load from a 4 byte aligned address
+is undefined behaviour rather than a slow path. So `bs` there is padded by four
+floats, which preserves alignment and still moves each row off the colliding
+bank. `as`, read one scalar at a time, takes a single float of padding.
+
+**Measured result, which is not the clean win I expected.** All 39 correctness
+tests still pass. Re-running the sweep at 4096:
+
+| variant | before | after |
+| --- | --- | --- |
+| vectorized | 8746 | 10325 GFLOP/s |
+| register blocked | 6028 | 5967 GFLOP/s |
+| tiled | 1586 | 1559 GFLOP/s |
+
+The vectorized kernel gained 18 percent. The register blocked and tiled kernels
+did not move outside run to run noise. So padding was worth doing for one rung
+and made no difference to the other two, which means bank conflicts were the
+binding constraint only in the vectorized kernel and something else limits the
+others. I am recording that as measured rather than claiming the optimisation
+helped across the board, and confirming the conflict counts actually dropped
+needs another elevated Nsight pass.
+
 ## 2026-07-22 Nsight Compute collected nothing, convincingly
 
 **Symptom.** The first `ncu` run looked like a success. It attached to the
