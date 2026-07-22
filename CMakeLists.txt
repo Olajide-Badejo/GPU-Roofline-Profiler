@@ -86,6 +86,24 @@ if(KERNEL_SOURCES OR PROFILING_SOURCES)
   if(EXISTS "${CMAKE_SOURCE_DIR}/src/main.cpp")
     add_executable(roofline_profiler "${CMAKE_SOURCE_DIR}/src/main.cpp")
     target_link_libraries(roofline_profiler PRIVATE roofline_kernels)
+
+    # NVTX3 is header only and ships with the toolkit. It is optional on
+    # purpose: a missing profiler annotation should never stop the benchmark
+    # from building, so the range helper compiles to nothing without it.
+    # CUDAToolkit_INCLUDE_DIRS is a list (include plus include/cccl), so it must
+    # be searched with find_path rather than tested with EXISTS, which silently
+    # fails against a multi element list.
+    find_path(ROOFLINE_NVTX_INCLUDE
+              NAMES nvtx3/nvToolsExt.h
+              HINTS ${CUDAToolkit_INCLUDE_DIRS})
+    if(ROOFLINE_NVTX_INCLUDE)
+      target_compile_definitions(roofline_profiler PRIVATE ROOFLINE_HAS_NVTX)
+      target_include_directories(roofline_profiler PRIVATE
+                                 ${ROOFLINE_NVTX_INCLUDE})
+      message(STATUS "NVTX found at ${ROOFLINE_NVTX_INCLUDE}: ranges enabled")
+    else()
+      message(STATUS "NVTX not found: timeline ranges compiled out")
+    endif()
   endif()
 else()
   message(STATUS "no kernel sources yet; skipping library and driver targets")

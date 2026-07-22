@@ -210,6 +210,59 @@ shim applies to the fetched dependency and not to my own project. Hand writing a
 YAML parser to dodge one upstream version declaration would have been a poor
 trade, and vendoring a patched copy is a maintenance burden for the same result.
 
+## 2026-07-22 Nsight Compute collected nothing, convincingly
+
+**Symptom.** The first `ncu` run looked like a success. It attached to the
+process, reported the kernel by name with its grid and block dimensions, ran the
+kernel, and disconnected cleanly. The metric value was `n/a`.
+
+**Why this is the dangerous failure mode.** Nothing errored. A CSV full of `n/a`
+parses fine, and had I piped it straight into the analysis without looking, the
+result would have been a report whose counter columns were all empty for a reason
+no one had noticed.
+
+**Root cause.** On Windows the NVIDIA driver restricts GPU performance counters
+to administrators unless
+`HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Global\NVTweak\RmProfilingAdminOnly`
+is set to 0. I checked: the value is not set at all, so the driver default
+applies, and the shell was not elevated. This is precisely the counter access
+caveat the spec warns about for WSL2, and it turns out to bite on native Windows
+too.
+
+**Fix.** `scripts/run_ncu_profile.ps1` now checks for elevation up front and
+refuses with an explanation rather than producing a file of `n/a`. The pass is
+run once from an elevated shell. I did not set the registry value: it is a
+permanent, system wide relaxation of who may read GPU counters, and that is the
+machine owner's decision to make deliberately, not a side effect of me wanting a
+profile.
+
+**Verified separately.** Nsight Systems does *not* need elevation. It warns that
+CPU sampling and context switch tracing are disabled, neither of which this
+project uses, and produces a complete CUDA and NVTX timeline regardless. So the
+timeline half of Phase 4 was finished without waiting on anything.
+
+## 2026-07-22 NVTX broke the build through windows.h
+
+**Symptom.** Enabling NVTX turned a clean build into
+`timing.hpp(139): error C2059: syntax error: ')'`, in a file that had not
+changed and that has nothing to do with profiling.
+
+**Root cause.** `nvtx3/nvToolsExt.h` includes `windows.h`, which defines `min`
+and `max` as preprocessor macros. Line 139 of the timing harness is
+`std::max(1, std::min(wanted, max_launches))`, and once those are macros the
+expression stops parsing. The error points at the victim, not the culprit.
+
+**Fix.** Define `NOMINMAX` (and `WIN32_LEAN_AND_MEAN`) in the NVTX helper before
+it includes the header, so the macros are never created. Putting the guard next
+to the include that causes the problem keeps the fix where the next person will
+look, rather than burying it in a global compile flag.
+
+**Also fixed alongside.** The CMake NVTX detection used
+`EXISTS "${CUDAToolkit_INCLUDE_DIRS}/nvtx3/nvToolsExt.h"`, which silently never
+matched because that variable is a *list* of two directories, not one path. It
+reported "NVTX not found" on a machine where the header was plainly present.
+Replaced with `find_path`, which searches the list properly.
+
 ## 2026-07-22 NVML explains the ceiling that looked impossible
 
 **Symptom.** The measured FP32 peak came out at 33.54 TFLOP/s against a

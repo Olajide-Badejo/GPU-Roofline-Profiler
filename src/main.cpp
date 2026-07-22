@@ -26,6 +26,7 @@
 #include "device_peaks.hpp"
 #include "kernels.hpp"
 #include "nvml_monitor.hpp"
+#include "nvtx_range.hpp"
 #include "progress.hpp"
 #include "timing.hpp"
 
@@ -243,6 +244,10 @@ int main(int argc, char** argv) {
             CUDA_CHECK(cudaMemset(x, 0, static_cast<size_t>(n) * sizeof(float)));
             CUDA_CHECK(cudaMemset(y, 0, static_cast<size_t>(n) * sizeof(float)));
 
+            const roofline::NvtxRange nvtx_cell(
+                "saxpy n=" + std::to_string(n) + " block=" +
+                std::to_string(block));
+
             const auto t = roofline::time_kernel_auto(
                 [&] { roofline::launch_saxpy(2.0f, x, y, n, block); }, warmup,
                 batches, per_batch);
@@ -286,6 +291,10 @@ int main(int argc, char** argv) {
                 static_cast<size_t>(roofline::reduction_scratch_elements()) *
                     sizeof(float)));
             CUDA_CHECK(cudaMemset(in, 0, bytes));
+
+            const roofline::NvtxRange nvtx_cell(
+                "reduction n=" + std::to_string(n) + " block=" +
+                std::to_string(block));
 
             const auto t = roofline::time_kernel_auto(
                 [&] { roofline::launch_reduction(in, out, scratch, n, block); },
@@ -336,6 +345,9 @@ int main(int argc, char** argv) {
             };
             for (const Variant v : {Variant{"naive", false},
                                     Variant{"tiled", true}}) {
+                const roofline::NvtxRange nvtx_cell(
+                    std::string("transpose ") + v.name + " size=" +
+                    std::to_string(size) + " tile=" + std::to_string(tile));
                 const auto t = roofline::time_kernel_auto(
                     [&] {
                         if (v.tiled) {
@@ -398,6 +410,10 @@ int main(int argc, char** argv) {
             CUDA_CHECK(cudaMemset(a, 0, a_count * sizeof(float)));
             CUDA_CHECK(cudaMemset(x, 0, static_cast<size_t>(shape.n) * sizeof(float)));
 
+            const roofline::NvtxRange nvtx_cell(
+                "gemv " + std::to_string(shape.m) + "x" +
+                std::to_string(shape.n) + " block=" + std::to_string(block));
+
             const auto t = roofline::time_kernel_auto(
                 [&] {
                     roofline::launch_gemv(a, x, y, shape.m, shape.n, block);
@@ -452,6 +468,8 @@ int main(int argc, char** argv) {
         for (const std::string& variant : cfg.gemm_variants) {
             const int tile = cfg.gemm_tile_dim;
             bool ran = true;
+            const roofline::NvtxRange nvtx_cell("gemm " + variant + " size=" +
+                                                std::to_string(size));
             const auto t = roofline::time_kernel_auto(
                 [&] {
                     if (variant == "naive") {
