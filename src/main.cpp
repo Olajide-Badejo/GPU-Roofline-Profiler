@@ -124,6 +124,27 @@ void write_peaks_csv(const fs::path& path, const roofline::Peaks& peaks) {
     fs::rename(tmp, path);
 }
 
+// Escape a string for embedding in JSON. Windows paths are the reason this
+// exists: "configs\sweep.yaml" written raw contains \s, which is not a legal
+// JSON escape, and the whole manifest fails to parse. The spec's rule that
+// results without a manifest do not exist makes an unparseable manifest as bad
+// as a missing one, so this is not a cosmetic fix.
+std::string json_escape(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 8);
+    for (const char c : value) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"':  out += "\\\""; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:   out += c;      break;
+        }
+    }
+    return out;
+}
+
 void write_manifest(const fs::path& path, const roofline::DeviceInfo& info,
                     const roofline::Peaks& peaks, const Options& opts,
                     int total_cells) {
@@ -137,10 +158,11 @@ void write_manifest(const fs::path& path, const roofline::DeviceInfo& info,
         out << "{\n";
         out << "  \"timestamp_utc\": \"" << roofline::utc_timestamp_now()
             << "\",\n";
-        out << "  \"config_path\": \"" << opts.config_path << "\",\n";
+        out << "  \"config_path\": \"" << json_escape(opts.config_path)
+            << "\",\n";
         out << "  \"total_cells\": " << total_cells << ",\n";
         out << "  \"device\": {\n";
-        out << "    \"name\": \"" << info.name << "\",\n";
+        out << "    \"name\": \"" << json_escape(info.name) << "\",\n";
         out << "    \"compute_capability\": \"" << info.compute_major << '.'
             << info.compute_minor << "\",\n";
         out << "    \"sm_count\": " << info.sm_count << ",\n";

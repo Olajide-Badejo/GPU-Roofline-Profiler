@@ -1,0 +1,26 @@
+{
+  "timestamp_utc": "2026-07-22T21:42:17.147Z",
+  "config_path": "configs\\sweep.yaml",
+  "total_cells": 62,
+  "device": {
+    "name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": "12.0",
+    "sm_count": 48,
+    "fp32_lanes_per_sm": 128,
+    "sm_clock_hz": 2.625e+09,
+    "memory_clock_hz": 1.4001e+10,
+    "memory_bus_width_bits": 192,
+    "total_global_mem": 12820480000,
+    "l2_cache_bytes": 50331648
+  },
+  "peaks": {
+    "theoretical_flops": 3.2256e+13,
+    "theoretical_bandwidth": 6.72048e+11,
+    "measured_flops": 3.37391e+13,
+    "measured_bandwidth": 5.90061e+11
+  },
+  "cuda": {
+    "driver_version": 13030,
+    "runtime_version": 13030
+  }
+}

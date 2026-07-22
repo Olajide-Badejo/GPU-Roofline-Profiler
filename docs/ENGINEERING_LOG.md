@@ -210,6 +210,33 @@ shim applies to the fetched dependency and not to my own project. Hand writing a
 YAML parser to dodge one upstream version declaration would have been a poor
 trade, and vendoring a patched copy is a maintenance burden for the same result.
 
+## 2026-07-22 Every manifest written so far was invalid JSON
+
+**Symptom.** Generating the environment appendix from the run manifest threw
+`json.decoder.JSONDecodeError: Invalid \escape: line 3 column 26`.
+
+**Root cause.** The driver wrote `"config_path": "configs\sweep.yaml"` straight
+into the JSON. On Windows the path separator is a backslash, and `\s` is not a
+legal JSON escape sequence, so the document is malformed. The device name went
+out unescaped too and would have broken on any name containing a backslash or a
+quote.
+
+**Why it mattered more than it looks.** The spec's rule is that results without a
+manifest do not exist. An unparseable manifest is exactly as useless as a missing
+one, and every run I had done up to this point carried one. Nothing had noticed
+because nothing had tried to read a manifest back until the report appendix
+needed it. The file looked perfectly reasonable to a human eye, which is how it
+survived several runs.
+
+**Fix.** A `json_escape` helper applied to every string written into the
+manifest, escaping backslash, quote, newline, carriage return, and tab. Re-ran
+the sweep and confirmed the manifest parses and the environment table generates
+from it.
+
+**Lesson.** Hand rolling JSON with `ostream <<` is fine for a fixed schema right
+up until a value contains a character the format reserves. If I extend the
+manifest much further, a real JSON library earns its place.
+
 ## 2026-07-22 The counters found a bug in my own kernels
 
 **What the counters said.** With DRAM metrics finally collecting, the shared

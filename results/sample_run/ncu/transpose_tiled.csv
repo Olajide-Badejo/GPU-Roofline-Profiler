@@ -1,0 +1,21 @@
+﻿==PROF== Connected to process 60016 (C:\Users\jidro\Documents\Elijah\ML_DL_ETC\Projects\Corrected Projects\GPU Roofline Profiler\build\roofline_profiler.exe)
+==PROF== Disconnected from process 60016
+device: NVIDIA GeForce RTX 5070 (sm_120), 48 SMs, 2.625 GHz
+measuring ceilings ...
+  theoretical: 32.26 TFLOP/s, 672.0 GB/s
+  measured   : 34.35 TFLOP/s, 580.2 GB/s
+wrote 7 rows to C:\Users\jidro\Documents\Elijah\ML_DL_ETC\Projects\Corrected Projects\GPU Roofline Profiler\results\raw\ncu_20260722T232450Z\driver_scratch\timing.csv
+NVML samples: 6
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","dram__bytes_op_read.sum","byte","17,056,256"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","dram__bytes_op_write.sum","byte","13,000,960"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","gpu__time_duration.sum","ns","85,824"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum","","40,532"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum","","131,072"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_st.sum","","131,072"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum","sector","524,288"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum","sector","524,288"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","0.31"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","19.46"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","64.46"
+"0","60016","roofline_profiler.exe","127.0.0.1","void unnamed>::transpose_tiled_kernel<32>(const float *, float *, int, int)","1","7","(32, 32, 1)","(64, 64, 1)","0","12.0","Command line profiler metrics","smsp__thread_inst_executed_per_inst_executed.ratio","","32"

@@ -1,0 +1,21 @@
+﻿==PROF== Connected to process 58960 (C:\Users\jidro\Documents\Elijah\ML_DL_ETC\Projects\Corrected Projects\GPU Roofline Profiler\build\roofline_profiler.exe)
+==PROF== Disconnected from process 58960
+device: NVIDIA GeForce RTX 5070 (sm_120), 48 SMs, 2.625 GHz
+measuring ceilings ...
+  theoretical: 32.26 TFLOP/s, 672.0 GB/s
+  measured   : 34.32 TFLOP/s, 595.2 GB/s
+wrote 7 rows to C:\Users\jidro\Documents\Elijah\ML_DL_ETC\Projects\Corrected Projects\GPU Roofline Profiler\results\raw\ncu_20260722T232450Z\driver_scratch\timing.csv
+NVML samples: 6
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","dram__bytes_op_read.sum","byte","134,221,568"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","dram__bytes_op_write.sum","byte","43,631,104"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","gpu__time_duration.sum","ns","292,928"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum","","0"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum","","1,048,576"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_st.sum","","524,288"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum","sector","4,194,304"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum","sector","2,097,152"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","33.26"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","22.30"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","83.82"
+"0","58960","roofline_profiler.exe","127.0.0.1","unnamed>::saxpy_kernel(float, const float *, float *, int)","1","7","(256, 1, 1)","(65536, 1, 1)","0","12.0","Command line profiler metrics","smsp__thread_inst_executed_per_inst_executed.ratio","","32"

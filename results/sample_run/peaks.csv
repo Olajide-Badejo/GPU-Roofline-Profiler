@@ -1,0 +1,3 @@
+label,peak_flops,peak_bandwidth
+theoretical,32256000000000.0,672048000000.0
+measured,33739119771597.6,590061393638.3

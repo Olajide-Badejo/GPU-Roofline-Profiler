@@ -1,0 +1,13 @@
+\begin{tabular}{lrrrrrr}
+\toprule
+kernel & L2 hit \textbackslash{}\% & occupancy \textbackslash{}\% & bank conflicts & ld sec/req & st sec/req & DRAM GB/s \\
+\midrule
+gemm\_naive & 100.39 & 66.61 & 0.00 & 2.50 & 4.00 & 8.43 \\
+gemm\_register\_blocked & 95.08 & 62.70 & 134541413.00 & 4.00 & 16.00 & 14.95 \\
+gemm\_tiled & 87.50 & 66.65 & 4695342.00 & 4.00 & 4.00 & 5.56 \\
+gemm\_vectorized & 95.33 & 62.28 & 93387380.00 & 16.00 & 16.00 & 22.03 \\
+saxpy & 33.26 & 83.82 & 0.00 & 4.00 & 4.00 & 607.15 \\
+transpose\_naive & 86.12 & 41.24 & 0.00 & 4.00 & 32.00 & 143.50 \\
+transpose\_tiled & 0.31 & 64.46 & 40532.00 & 4.00 & 4.00 & 350.22 \\
+\bottomrule
+\end{tabular}

@@ -229,6 +229,7 @@ def regenerate(
         )
         # Still (re)write any tables we can, then exit cleanly.
         _write_timing_table(results_dir, tables_dir)
+        _write_counter_table(ncu_dir, tables_dir)
         return 0
 
     steps = ["main roofline", "timing table"]
@@ -242,8 +243,135 @@ def regenerate(
         title="RTX 5070 roofline",
     )
     _write_timing_table(results_dir, tables_dir)
+    _write_counter_table(ncu_dir, tables_dir)
+    _write_ceilings_table(ceilings, tables_dir)
+    _write_environment_table(results_dir, tables_dir)
     print(f"wrote figures to {figures_dir} and tables to {tables_dir}")
     return 0
+
+
+def _write_environment_table(results_dir: Path, tables_dir: Path) -> None:
+    """Write the machine environment table from the run manifest.
+
+    Generated at report build time from what the run actually recorded, never
+    typed from memory, so the appendix always describes the machine that produced
+    the numbers in the document.
+    """
+    manifest_path = results_dir / "manifest.json"
+    if not manifest_path.exists():
+        return
+    import json
+
+    import pandas as pd
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    device = manifest.get("device", {})
+    cuda = manifest.get("cuda", {})
+    total_lanes = int(device.get("sm_count", 0)) * int(
+        device.get("fp32_lanes_per_sm", 0)
+    )
+
+    rows = [
+        ("GPU", str(device.get("name", "unknown"))),
+        ("compute capability", str(device.get("compute_capability", ""))),
+        ("SMs", f"{device.get('sm_count', 0)}"),
+        ("FP32 lanes per SM", f"{device.get('fp32_lanes_per_sm', 0)}"),
+        ("total FP32 lanes", f"{total_lanes}"),
+        ("SM clock (GHz)", f"{float(device.get('sm_clock_hz', 0)) / 1e9:.3f}"),
+        (
+            "memory clock (GHz)",
+            f"{float(device.get('memory_clock_hz', 0)) / 1e9:.3f}",
+        ),
+        ("memory bus (bits)", f"{device.get('memory_bus_width_bits', 0)}"),
+        (
+            "total VRAM (MiB)",
+            f"{int(device.get('total_global_mem', 0)) // (1024 * 1024)}",
+        ),
+        ("L2 cache (MiB)", f"{int(device.get('l2_cache_bytes', 0)) // (1024 * 1024)}"),
+        ("CUDA driver version", str(cuda.get("driver_version", ""))),
+        ("CUDA runtime version", str(cuda.get("runtime_version", ""))),
+        ("run timestamp (UTC)", str(manifest.get("timestamp_utc", ""))),
+    ]
+    frame = pd.DataFrame(rows, columns=["property", "value"])
+    tables.write_table(
+        frame,
+        tables_dir / "environment_summary.tex",
+        headers={"property": "property", "value": "value"},
+    )
+
+
+def _write_ceilings_table(ceilings: list[Ceilings], tables_dir: Path) -> None:
+    """Write the ceilings table, in the friendlier units the report reads in."""
+    if not ceilings:
+        return
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "ceiling": [c.label for c in ceilings],
+            "compute_tflops": [c.peak_flops / 1.0e12 for c in ceilings],
+            "bandwidth_gbps": [c.peak_bandwidth / 1.0e9 for c in ceilings],
+            "ridge_flop_per_byte": [c.ridge_point for c in ceilings],
+        }
+    )
+    tables.write_table(
+        frame,
+        tables_dir / "ceilings.tex",
+        float_format="{:.2f}",
+        headers={
+            "ceiling": "ceiling",
+            "compute_tflops": "compute (TFLOP/s)",
+            "bandwidth_gbps": "bandwidth (GB/s)",
+            "ridge_flop_per_byte": "ridge (FLOP/byte)",
+        },
+    )
+
+
+def _write_counter_table(ncu_dir: Path | None, tables_dir: Path) -> None:
+    """Write the Nsight Compute counter table the discussion section cites."""
+    if ncu_dir is None or not ncu_dir.exists():
+        return
+    from roofline import ncu as ncu_mod
+    from roofline.loaders import DataValidationError
+
+    try:
+        summary = ncu_mod.summarize_cells(ncu_mod.parse_ncu_directory(ncu_dir))
+    except (DataValidationError, FileNotFoundError):
+        return
+
+    # A percentage above 100 cannot be real. Report it as measured, but say so
+    # rather than letting the report assert it with a straight face.
+    for cell, column, value in ncu_mod.implausible_percentages(summary):
+        print(
+            f"note: {cell} reports {column} = {value:.2f}, which exceeds 100 "
+            f"and is a counter artifact; reported as measured"
+        )
+
+    table = summary[
+        [
+            "cell",
+            "l2_hit_pct",
+            "occupancy_pct",
+            "bank_conflicts",
+            "ld_sectors_per_request",
+            "st_sectors_per_request",
+            "dram_gbps",
+        ]
+    ].copy()
+    tables.write_table(
+        table,
+        tables_dir / "ncu_counters.tex",
+        float_format="{:.2f}",
+        headers={
+            "cell": "kernel",
+            "l2_hit_pct": "L2 hit \\%",
+            "occupancy_pct": "occupancy \\%",
+            "bank_conflicts": "bank conflicts",
+            "ld_sectors_per_request": "ld sec/req",
+            "st_sectors_per_request": "st sec/req",
+            "dram_gbps": "DRAM GB/s",
+        },
+    )
 
 
 def _write_timing_table(results_dir: Path, tables_dir: Path) -> None:

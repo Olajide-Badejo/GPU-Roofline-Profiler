@@ -1,49 +1,148 @@
 \section{Discussion and bottleneck analysis}
 
 This is where the project earns its title. A roofline plot on its own only shows
-that a kernel is slow; it does not say why. The Nsight Compute counters do, and
-each kernel's position below is tied to the specific counter that explains it
-rather than to a generic claim about what an optimization usually achieves. The
-prose in this section is written against the collected counters once the profiling
-pass has run on this machine; until then the structure below records exactly
-which counter is expected to explain each rung, so the analysis is a fill in of
-measured evidence and not a rewrite.
+that a kernel is slow; it does not say why. Every claim below is tied to a
+specific Nsight Compute counter from the table in the results section, measured
+on this card, and where a counter contradicted what I expected I have said so
+rather than quietly reporting the version that sounded better.
 
-\subsection{The streaming kernels against the bandwidth ceiling}
+\subsection{SAXPY anchors the memory bound edge}
 
-SAXPY and the reduction should sit close under the measured bandwidth ceiling.
-The counter that settles it is the DRAM throughput as a fraction of peak: if
-SAXPY reaches most of the measured copy bandwidth, the harness is sound and the
-memory bound edge is anchored. Any large shortfall points at launch overhead or
-occupancy rather than bandwidth, and the occupancy counter distinguishes them.
+SAXPY at 16.8 million elements moves 177.9\,MB of real DRAM traffic in
+\SI{0.293}{\milli\second}, which is \SI{607.2}{GB/s}. The measured copy ceiling
+on this card is \SI{604.1}{GB/s}. SAXPY is therefore running at essentially the
+full achievable bandwidth of the machine, and the load and store paths both show
+4 sectors per request, which is exactly the ideal for a 4 byte access.
 
-\subsection{Transpose: coalescing and bank conflicts}
+This is the anchor the whole suite depends on. If the simplest streaming kernel
+had failed to approach the copy ceiling, the harness or the bandwidth
+microbenchmark would have been wrong and nothing further would have been worth
+reading. It did not, so the memory bound edge is trustworthy.
 
-The naive and tiled transpose is the cleanest counter story in the suite. The
-naive kernel's uncoalesced writes show up as a low global store efficiency; the
-tiled kernel fixes that and the efficiency counter jumps. The padded tile then
-shows up in the shared memory bank conflict counter falling to near zero, where
-an unpadded tile would show heavy conflicts on the transposed access. The two
-counters, store efficiency and bank conflicts, are exactly the two levers the
-tiled transpose pulls.
+It is also where the theoretical byte count first misleads. At 4.2 million
+elements SAXPY appears to reach \SI{1583}{GB/s}, more than twice the bus can
+carry. Nothing is wrong with the timing: at that size the two vectors total
+32\,MB and fit inside this card's 48\,MB L2, so the kernel is not touching DRAM
+at all and the figure is L2 bandwidth wearing a DRAM label. Only once the working
+set exceeds the cache do the numbers settle at the 560 to 566\,GB/s that DRAM can
+actually sustain. This is precisely why every point on the roofline is labelled
+with which byte count produced it.
 
-\subsection{The GEMM ladder: reuse and occupancy}
+\subsection{Transpose: coalescing, isolated}
 
-Up the GEMM ladder, arithmetic intensity and achieved performance should climb
-together, and the counters say why at each step. The naive kernel is memory
-bound with low intensity. Shared memory tiling raises the intensity by cutting
-DRAM traffic, visible as the measured intensity moving right toward the
-theoretical value. Register blocking raises reuse further but spends registers,
-so the occupancy counter is where its cost shows up: the interesting question is
-whether the reuse gain outweighs the occupancy it costs, and the counters answer
-it directly. Vectorized loads reduce the memory instruction count, and cuBLAS
-sits above the custom kernels as the vendor reference.
+The transpose pair does no floating point work, so nothing hides the memory
+behaviour, and the counters give the cleanest result in the report:
+
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+ & naive & tiled \\
+\midrule
+load sectors per request & 4.00 & 4.00 \\
+store sectors per request & 32.00 & 4.00 \\
+duration (ms) & 0.163 & 0.086 \\
+DRAM throughput (GB/s) & 143.5 & 350.2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A perfectly coalesced warp storing 4 byte values touches 128 contiguous bytes,
+which is 4 sectors of 32 bytes. The naive kernel's stores take \emph{32} sectors
+per request: because the transposed write strides by a whole row, every thread in
+the warp lands in a different sector and the hardware issues eight times the
+traffic it needs. Staging the tile through shared memory brings the stores back
+to exactly 4 sectors per request, and the kernel runs 1.9 times faster.
+
+The padded tile does its job too. The tiled transpose reports 40{,}532 shared
+memory bank conflicts across the whole kernel, which is negligible next to the
+tens of millions the unpadded GEMM tiles produced before I fixed them.
+
+\subsection{The GEMM ladder is not memory bound at all}
+
+The expectation going in was that the naive GEMM would be memory bound and that
+shared memory tiling would fix it. The counters say otherwise, and the surprise
+is the most interesting result in the project.
+
+Naive and tiled GEMM at 2048 report L2 sector hit rates that are the same to
+within measurement noise, and both move DRAM traffic of only 5 to 8\,GB/s against
+a \SI{604}{GB/s} ceiling: between one and two percent of the memory system.
+Neither kernel is close to memory bound. The naive kernel would move 68.7\,GB
+from DRAM if every operand read went to memory; it actually moves 80.8\,MB, so
+the cache absorbs better than 99.8 percent of its redundant loads.
+
+That is why tiling does not pay here. Shared memory tiling exists to remove
+redundant DRAM traffic, and on this card there is essentially none left to
+remove: a 2048 square operand is 16\,MB and the working set fits inside the
+48\,MB L2. What tiling still costs is a synchronisation per tile step and a
+shared memory round trip, so it lands slightly \emph{behind} the naive kernel
+rather than ahead of it. The classic optimisation is aimed at a bottleneck this
+hardware no longer has at this problem size.
+
+What does bind the naive kernel is instruction throughput: it reports 98.5
+percent of peak sustained SM throughput while achieving under 2\,TFLOP/s of
+useful arithmetic. It is saturating the SM issue and memory pipelines with an
+enormous number of individually cheap loads that all hit cache. The fix is not to
+move data less far, it is to ask for it fewer times, which is exactly what
+register blocking does: each thread computes a 4 by 4 output tile from registers,
+so one shared load feeds sixteen multiply adds instead of one. That rung reaches
+\SI{5967}{GFLOP/s}, near four times the naive kernel, and the vectorized rung
+reaches \SI{10325}{GFLOP/s}.
+
+One caveat I want to state plainly: the naive GEMM's reported L2 hit rate is
+100.39 percent. A hit rate cannot exceed 100 percent, and re-running the same
+kernel gave 97.02, so this is noise in how the hardware attributes sector hits
+rather than a real quantity. I report what the counter said and read it as
+"essentially every access hits", rather than clamping the number to make the
+table look tidy.
+
+\subsection{A bug the counters found in my own kernels}
+
+The bank conflict counter read 134.5 million for the register blocked GEMM and
+93.4 million for the vectorized one, against 40 thousand for the padded
+transpose. I had applied the \texttt{[TILE][TILE + 1]} padding to the transpose,
+written a comment explaining why it matters, and then declared every GEMM shared
+tile unpadded. The register blocked inner loop walks down a column of its tile,
+so the address advances by a whole row per step; with an unpadded row length of
+16 that stride is a multiple of the 32 bank width and the warp serialises on one
+bank.
+
+Padding the tiles is not quite free. The vectorized kernel reads its tile with a
+\texttt{float4}, so row starts must remain 16 byte aligned; a one float pad would
+make the row stride 260 bytes and turn an aligned vector load into undefined
+behaviour. Padding by four floats preserves the alignment and still moves each
+row off the colliding bank.
+
+The measured outcome was not the clean sweep I expected. The vectorized kernel
+gained 18 percent, from 8746 to \SI{10325}{GFLOP/s} at 4096. The register blocked
+and tiled kernels did not move outside run to run noise. So bank conflicts were
+the binding constraint in only one of the three, and I am reporting that rather
+than implying the optimisation helped everywhere. Confirming the conflict counts
+themselves dropped needs a further profiling pass.
+
+\subsection{cuBLAS, and what the gap means}
+
+cuBLAS reaches roughly \SI{22}{TFLOP/s}, about twice the best hand written rung
+and near 68 percent of the theoretical compute ceiling. It is listed as a library
+rather than as a rung of the ladder because the comparison is not like for like:
+it selects among many tuned kernels per shape and uses instruction scheduling
+that is not reachable from ordinary CUDA C. The honest reading is not that my
+kernels are close, but that the ladder recovers a large fraction of the available
+performance through three ideas (tiling for reuse, register blocking, and
+vectorized access) and that the remaining factor of two is what a vendor library
+buys.
 
 \subsection{Thermals and clocks}
 
-Because this is a boost clocked consumer card also driving a display, the NVML
-log recorded alongside every run is what shows whether a result was shaped by
-temperature or clock drift rather than by kernel design. Where a kernel's timing
-variance is large, the joined power and clock samples say whether the card was
-throttling or simply boosting unevenly, and that distinction is called out here
-wherever the NVML trace makes it.
+The NVML trace resolves one anomaly outright. The measured FP32 ceiling came out
+at \SI{33.5}{TFLOP/s} against a theoretical \SI{32.26}{TFLOP/s}, which is 104
+percent of a number that should be an upper bound. The clock trace shows the card
+running at 2857\,MHz on average and 2865\,MHz at peak under load, while the CUDA
+runtime reports a nominal 2625\,MHz. Recomputing the ceiling at the clock the card
+actually ran gives \SI{35.2}{TFLOP/s}, and the microbenchmark then sits at 95
+percent of it, which is where a good FMA loop belongs.
+
+I have left the theoretical ceiling derived from the reported clock, because that
+is the reproducible definition, and said here that the card exceeds it. Without
+the power and clock trace this would have looked like a factor hiding somewhere
+in the FLOP counting, and I would have gone looking for a bug that was never
+there.
