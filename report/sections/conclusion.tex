@@ -1,0 +1,21 @@
+\section{Conclusion and future work}
+
+The suite walks a kernel ladder from a memory bound SAXPY to a compute bound
+register blocked GEMM, places each rung on a roofline against both the
+theoretical and the measured ceilings for this RTX 5070, and ties each position
+back to the Nsight Compute counter that explains it. The value is not any single
+fast kernel but the counter backed account of why each kernel lands where it
+does, and the honest gap between the vendor spec sheet and what the card actually
+delivers.
+
+Several extensions would sharpen the picture. A WMMA tensor core GEMM on its own
+roofline panel would add a second, higher compute ceiling and show how far the
+FP32 CUDA core story is from the tensor core story on the same silicon. A cache
+aware roofline with a second sloped ceiling for L2 bandwidth would separate
+kernels that are DRAM bound from kernels that are L2 bound, which the single
+DRAM ceiling here cannot distinguish. Sweeping the power and clock limits and
+replotting would turn the NVML trace from a diagnostic into a first class axis,
+showing how the ceilings themselves move as the card is throttled. Each of these
+is additive: the harness, the analysis package, and the report pipeline are built
+to absorb a new kernel or a new ceiling and regenerate every figure with one
+command.

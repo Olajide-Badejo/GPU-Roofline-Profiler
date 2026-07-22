@@ -1,0 +1,22 @@
+\section{Experimental setup}
+
+The measurements in this report come from one machine, described in the
+environment appendix, which is generated from the run manifests rather than typed
+here. The GPU is an RTX 5070 on Windows 11, and it is also the display adapter,
+so the benchmark driver checks free memory before each allocation and skips any
+configuration that would not leave comfortable headroom for the desktop.
+
+Every pipeline run writes a timestamped directory under \texttt{results/raw} with
+a manifest recording the resolved sweep configuration, the driver and CUDA
+versions, an \texttt{nvidia-smi} snapshot, and the exact Nsight tool versions.
+Results without a manifest are treated as not existing. The sweep parameters,
+the sizes, the tile dimensions, and the repeat counts, all live in
+\texttt{configs/sweep.yaml}; nothing about the experiment is hard coded in the
+source.
+
+The kernels profiled in detail with Nsight Compute are a curated subset of the
+timing sweep, each at two or three representative sizes, because the profiler
+replays each kernel many times per metric set and profiling the full sweep would
+take hours to no additional benefit.
+
+\inputgenerated{tables/environment_summary.tex}

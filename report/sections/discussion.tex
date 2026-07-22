@@ -1,0 +1,49 @@
+\section{Discussion and bottleneck analysis}
+
+This is where the project earns its title. A roofline plot on its own only shows
+that a kernel is slow; it does not say why. The Nsight Compute counters do, and
+each kernel's position below is tied to the specific counter that explains it
+rather than to a generic claim about what an optimization usually achieves. The
+prose in this section is written against the collected counters once the profiling
+pass has run on this machine; until then the structure below records exactly
+which counter is expected to explain each rung, so the analysis is a fill in of
+measured evidence and not a rewrite.
+
+\subsection{The streaming kernels against the bandwidth ceiling}
+
+SAXPY and the reduction should sit close under the measured bandwidth ceiling.
+The counter that settles it is the DRAM throughput as a fraction of peak: if
+SAXPY reaches most of the measured copy bandwidth, the harness is sound and the
+memory bound edge is anchored. Any large shortfall points at launch overhead or
+occupancy rather than bandwidth, and the occupancy counter distinguishes them.
+
+\subsection{Transpose: coalescing and bank conflicts}
+
+The naive and tiled transpose is the cleanest counter story in the suite. The
+naive kernel's uncoalesced writes show up as a low global store efficiency; the
+tiled kernel fixes that and the efficiency counter jumps. The padded tile then
+shows up in the shared memory bank conflict counter falling to near zero, where
+an unpadded tile would show heavy conflicts on the transposed access. The two
+counters, store efficiency and bank conflicts, are exactly the two levers the
+tiled transpose pulls.
+
+\subsection{The GEMM ladder: reuse and occupancy}
+
+Up the GEMM ladder, arithmetic intensity and achieved performance should climb
+together, and the counters say why at each step. The naive kernel is memory
+bound with low intensity. Shared memory tiling raises the intensity by cutting
+DRAM traffic, visible as the measured intensity moving right toward the
+theoretical value. Register blocking raises reuse further but spends registers,
+so the occupancy counter is where its cost shows up: the interesting question is
+whether the reuse gain outweighs the occupancy it costs, and the counters answer
+it directly. Vectorized loads reduce the memory instruction count, and cuBLAS
+sits above the custom kernels as the vendor reference.
+
+\subsection{Thermals and clocks}
+
+Because this is a boost clocked consumer card also driving a display, the NVML
+log recorded alongside every run is what shows whether a result was shaped by
+temperature or clock drift rather than by kernel design. Where a kernel's timing
+variance is large, the joined power and clock samples say whether the card was
+throttling or simply boosting unevenly, and that distinction is called out here
+wherever the NVML trace makes it.

@@ -1,0 +1,40 @@
+\section{The roofline model}
+
+The roofline model of Williams, Waterman, and Patterson~\cite{williams2009roofline}
+bounds the performance a kernel can attain on a machine by the smaller of two
+limits. Let $P_{\max}$ be the peak floating point rate in FLOP/s and $B$ the peak
+memory bandwidth in byte/s. For a kernel with arithmetic intensity $I$, measured
+in FLOP per byte, the attainable performance is
+
+\begin{equation}
+  P(I) = \min\!\left(P_{\max},\; I \cdot B\right).
+\end{equation}
+
+The first term is a horizontal line, the compute ceiling: no amount of memory
+bandwidth lets a kernel exceed the rate at which the arithmetic units retire
+operations. The second term is a line through the origin with slope $B$, the
+memory ceiling: a kernel of intensity $I$ cannot run faster than the rate at
+which memory can deliver its operands. Plotted on log-log axes, the two combine
+into the characteristic roof shape.
+
+The two ceilings meet at the ridge point,
+
+\begin{equation}
+  I_{\text{ridge}} = \frac{P_{\max}}{B}.
+\end{equation}
+
+A kernel whose intensity is below $I_{\text{ridge}}$ is memory bound: it sits
+under the sloped part of the roof, and the way to make it faster is to move less
+data or move it more efficiently. A kernel above the ridge is compute bound: it
+sits under the flat part, and only more arithmetic throughput helps. The ridge
+point is a property of the machine, not the kernel, so the same intensity can be
+memory bound on one card and compute bound on another.
+
+Arithmetic intensity is where the honesty of the analysis lives. The theoretical
+intensity of a kernel counts the minimum bytes a perfect implementation would
+move: read each input once, write each output once. The measured intensity uses
+the bytes the kernel actually moved through DRAM, which Nsight Compute reports,
+and which include cache misses, register spills, and redundant loads that a real
+implementation suffers. The gap between the two is most of the interesting story
+in this report, so every point on my rooflines is labeled with which byte count
+produced its intensity.

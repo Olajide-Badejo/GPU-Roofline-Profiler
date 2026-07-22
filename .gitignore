@@ -39,6 +39,15 @@ venv/
 # Raw results are regenerated per run; only results/sample_run is committed.
 /results/raw/
 
+# Report PDFs and figures are regenerated from results by one command. The one
+# canonical compiled report lives under results/sample_run and is committed
+# there, so the repo shows real output without a full rerun.
+/report/main.pdf
+/report_debug/debug_report.pdf
+/report_for_me/report_for_me.pdf
+/report/figures/*.pdf
+/report/figures/*.png
+
 # Editor / OS
 .vscode/
 .idea/

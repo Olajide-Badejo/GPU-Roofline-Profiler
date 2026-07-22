@@ -1,0 +1,25 @@
+\section{Introduction}
+
+This report is about one graphics card and what it can actually do. The card is
+an RTX 5070, a Blackwell part with 12\,GB of GDDR7 that also happens to be
+driving the display on the machine I built this on. The vendor quotes a peak
+around \SI{31}{TFLOPS} of FP32 and a memory bandwidth around \SI{672}{GB/s}. Those
+two numbers are the headline of any spec sheet, and on their own they say almost
+nothing about how fast a given kernel will run, because most kernels are limited
+not by raw compute but by how much data they have to move to feed that compute.
+
+The roofline model exists to make that trade off visible. It plots attainable
+performance against arithmetic intensity, the ratio of floating point work to
+bytes moved, and bounds every kernel under two ceilings at once: a flat compute
+ceiling and a sloped memory ceiling. Where a kernel sits under that roof tells
+you which resource it is starved on, and therefore what would make it faster.
+
+The contribution here is not another fast GEMM. It is a ladder of kernels that
+walks the arithmetic intensity axis on purpose, from a SAXPY that touches memory
+and does almost no arithmetic, through a transpose that does no floating point
+work at all, up to a register blocked GEMM that reuses each loaded value many
+times. For every rung I measure where it lands, and I explain that position with
+the specific hardware counters behind it, not with a generic statement about
+what tiling usually does. The two ceilings I draw are both real: one derived
+from the device properties, one measured by pushing the card as hard as I can
+with a microbenchmark, and I am honest about the distance between them.

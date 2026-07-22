@@ -1,0 +1,46 @@
+\section{Methodology}
+
+\subsection{Timing}
+
+All kernel timing uses CUDA events, not host wall clock, so the measurement sees
+device time and is not polluted by launch overhead or host scheduling. To keep
+the per launch overhead from dominating on the cheap kernels, I place many
+launches between a single pair of events and divide by the launch count rather
+than synchronizing once per launch. Before any timed run I discard a batch of
+warmup iterations, which lets the boost clock ramp and the caches warm so the
+timed region measures steady state rather than the cold transient.
+
+I then time at least ten batches and report the mean, median, and standard
+deviation. This card boosts its clock opportunistically and shares silicon with
+the display, so run to run variance is real and worth showing rather than hiding
+behind a single number. The standard deviation column in every timing table is
+there for exactly that reason.
+
+\subsection{Counting floating point operations}
+
+Each kernel's FLOP count comes from its actual arithmetic, not an estimate. A
+GEMM of dimensions $M \times N \times K$ does $2MNK$ floating point operations,
+counting each multiply and add separately. A GEMV of an $M \times N$ matrix does
+$2MN$. A SAXPY over $N$ elements does $2N$, one multiply and one add per element.
+A transpose does zero floating point work, which is the whole point of including
+it: it isolates the memory system with no arithmetic to hide behind.
+
+\subsection{Counting bytes}
+
+I report two byte counts wherever both are available. The theoretical count is
+the minimum traffic a perfect implementation would generate: read each input
+once, write each output once, in the kernel's precision. The measured count is
+the DRAM read and write bytes Nsight Compute observed. Arithmetic intensity is
+computed from the measured bytes where the profiler ran, and falls back to the
+theoretical bytes elsewhere, always labeled so the two are never confused.
+
+\subsection{Theoretical versus empirical peak}
+
+The theoretical ceilings come from the device properties queried at runtime:
+the FP32 peak from the SM count, the FP32 lanes per SM, and the boost clock,
+counting a fused multiply add as two operations; the bandwidth peak from the bus
+width and the effective memory transfer rate. The empirical ceilings come from
+pushing the hardware directly: a register resident FMA loop for compute, and a
+large device to device copy for bandwidth. A card almost never reaches its
+theoretical peak, and reporting the measured ceiling next to the theoretical one
+is what keeps the roofline honest about what this specific machine delivers.

@@ -1,0 +1,36 @@
+\section{Results}
+
+\subsection{Ceilings}
+
+The theoretical and measured ceilings for this card are collected in the table
+below. The theoretical numbers are derived from device properties; the measured
+numbers come from the FMA microbenchmark and the large device to device copy.
+
+\inputgenerated{tables/ceilings.tex}
+
+\subsection{The roofline}
+
+Figure~\ref{fig:roofline-main} places every kernel configuration on the roofline
+against both ceilings. Points whose intensity was computed from measured DRAM
+bytes are drawn differently from points that fall back to a theoretical byte
+count, so the reader always knows which is which.
+
+\begin{figure}[htbp]
+  \centering
+  \includegenerated{roofline_main.pdf}
+  \caption{Kernel ladder on the RTX 5070 roofline, theoretical and measured
+    ceilings shown together.}
+  \label{fig:roofline-main}
+\end{figure}
+
+\subsection{Timing summary}
+
+\inputgenerated{tables/timing_summary.tex}
+
+\subsection{Nsight Compute counters}
+
+The counters that explain each kernel's position, achieved and theoretical
+occupancy, DRAM bytes, shared memory bank conflicts, and warp execution
+efficiency, are collected for the curated subset below.
+
+\inputgenerated{tables/ncu_counters.tex}

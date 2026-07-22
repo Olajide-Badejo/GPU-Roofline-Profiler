@@ -1,0 +1,103 @@
+\documentclass[11pt]{article}
+
+% The debug report: a first person postmortem grouped by theme, built from the
+% engineering log. It is an equal rank deliverable, not an afterthought, and I do
+% not pad it. Entries appear here once the problem behind them is understood and
+% fixed, so this document trails the engineering log by exactly the lag between
+% hitting a problem and resolving it.
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\title{GPU Roofline Profiler: Debug Report}
+\author{Elijah}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This is the honest account of what went wrong while building the profiler and
+how I fixed it, grouped by theme rather than by date. The dated raw material
+lives in \texttt{docs/ENGINEERING\_LOG.md}; this document is the postmortem that
+draws the lessons out of it.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Environment and tooling}
+
+\subsection{The machine had the GPU but none of the toolchain}
+
+The first probe of the target machine was a surprise in the honest direction.
+\texttt{nvidia-smi} reported a healthy RTX 5070 on driver 610.62 with a CUDA user
+mode driver at version 13.3, so the card and its runtime were fine. Everything
+needed to actually build against it was missing: no CUDA Toolkit and therefore no
+\texttt{nvcc}, no Visual Studio and therefore no \texttt{cl.exe} for \texttt{nvcc}
+to use as its host compiler, and neither Nsight Systems nor Nsight Compute. The
+machine had the gaming and display stack but not the developer stack.
+
+The root cause was mundane: the tools were simply never installed. The right
+response was the one the spec mandates, to stop and ask before running large
+installers that need elevated permissions, rather than to guess. In the meantime
+I built every part of the project that does not need a compiler, so the wait was
+not idle: the repository scaffold, the dash lint, the Python analysis package
+with its tests, and these report skeletons all came first.
+
+\subsection{The Python pins predated the interpreter}
+
+The machine's usable Python is CPython 3.14. The dependency versions the spec
+suggested were older, and pip had no 3.14 wheels for them, so it fell back to
+building pandas from source with meson, which then failed for the same reason
+\texttt{nvcc} would have: no MSVC. The fix was to install the current releases
+that do ship 3.14 wheels and to re-pin \texttt{requirements.txt} to exactly those
+versions. Pinning to what actually installs and passes on this box is more honest
+than pinning to an aspiration that cannot be built here.
+
+\section{Measurement methodology}
+
+To be written as the timing and profiling passes run on the hardware. The entries
+expected here concern warmup and batching decisions, run to run variance on a
+boost clocked card, and the difference between theoretical and measured ceilings.
+
+\section{Kernel correctness}
+
+To be written as each kernel is validated against its CPU and cuBLAS reference.
+The entries expected here concern floating point accumulation order and the
+tolerance chosen for the large GEMM comparison.
+
+\section{Profiling tooling}
+
+\subsection{A timestamp parser that was too strict, then not strict enough}
+
+The NVML loader parses sample timestamps to real datetimes so timing rows can be
+joined to power and clock samples. The first version let pandas infer the format
+per element, which is slow and, under pandas 3.0, quietly failed on a sample that
+mixed timestamps with and without fractional seconds: one row parsed, the next
+became \texttt{NaT}. The fix was to pin the parser to ISO 8601, which accepts both
+precisions consistently and rejects genuinely malformed input loudly instead of
+silently. The lesson generalizes: a loader that is meant to reject bad data has to
+be tested with bad data, which is why the loader tests feed it broken rows on
+purpose.
+
+Further profiling tooling entries, in particular the Nsight Compute metric name
+mapping and how it shifts between tool versions, will be added once the profiling
+pass runs on this machine.
+
+\section{Report pipeline}
+
+\subsection{Underscores in a placeholder path broke the compile}
+
+The main report guards every generated figure and table with a macro that prints
+a visible placeholder when the artifact does not exist yet, so the document
+compiles before and after the pipeline runs. The first version printed the
+missing path inside \texttt{\textbackslash texttt}, and the paths contain
+underscores, which LaTeX reads as math subscripts in text mode and refuses to
+typeset. Wrapping the path in \texttt{\textbackslash detokenize} renders the
+underscores literally and the guard compiles cleanly whether or not the artifact
+is present.
+
+\end{document}

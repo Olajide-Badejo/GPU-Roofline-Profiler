@@ -1,0 +1,67 @@
+\section{Kernel implementations}
+
+The suite is a ladder along the arithmetic intensity axis. Each rung is a kernel
+whose position on the roofline is meant to teach something specific.
+
+\subsection{SAXPY}
+
+$y \leftarrow a x + y$ over long vectors. Two floating point operations per
+element against three memory accesses (two reads, one write), so its intensity is
+tiny and it lives at the far memory bound left edge of the roofline. It is the
+anchor: if SAXPY does not reach close to the measured bandwidth ceiling, the
+harness or the copy microbenchmark is wrong before any GEMM is even considered.
+
+\subsection{Reduction}
+
+A shared memory tree reduction that sums a large array. It exercises the
+synchronization and shared memory path rather than raw streaming, and it is
+tested across non power of two sizes because the tail handling is where reduction
+kernels usually break.
+
+\subsection{Transpose, naive and tiled}
+
+The transpose does no floating point work, which isolates coalescing and shared
+memory bank conflicts with nothing else in the way. The naive version reads the
+input coalesced but writes the transpose with a large stride, so the writes are
+uncoalesced. The tiled version stages a tile in shared memory so both the global
+read and the global write are coalesced. The tile is declared one column wider
+than it is tall, \texttt{tile[TILE\_DIM][TILE\_DIM+1]}, so that the transposed
+access pattern to shared memory does not map every thread in a warp onto the same
+bank. That single pad word removes the bank conflicts on the transposed access,
+and the naive versus tiled delta is the cleanest demonstration in the whole
+suite.
+
+\subsection{GEMV}
+
+Matrix times vector. Each matrix element is read once and touched by one
+multiply add, so reuse is low and the kernel sits in the middle of the intensity
+axis, between the streaming kernels and the GEMM ladder.
+
+\subsection{The GEMM ladder}
+
+General matrix multiply is where intensity and achieved performance climb
+together as reuse improves, and it is the core of the report.
+
+\begin{description}
+  \item[Naive.] Every thread reads its row and column straight from global
+    memory. Correct, and slow, because each value is reloaded from DRAM many
+    times. This is the memory bound bottom of the GEMM ladder.
+  \item[Shared memory tiled.] Threads cooperate to stage tiles of $A$ and $B$
+    into shared memory once, then reuse them across the tile. Reuse rises and the
+    kernel climbs the roof.
+  \item[Register blocked.] Each thread computes a small output tile rather than a
+    single element, holding partial sums in registers. This raises the reuse per
+    shared memory load, trading register pressure for far fewer shared accesses,
+    and it is usually the step with the largest jump in achieved performance.
+  \item[Vectorized.] The register blocked kernel with \texttt{float4} loads and
+    stores, so each memory instruction moves four values and the load and store
+    issue pressure drops.
+  \item[cuBLAS SGEMM.] The vendor library, plotted as an honest ceiling for a
+    custom kernel to be measured against. It is labeled as a library, not as one
+    of my kernels, because it is not a fair comparison of hand written code and
+    it would be dishonest to present it as one.
+\end{description}
+
+A WMMA tensor core GEMM is a stretch goal on its own roofline panel, since its
+compute ceiling is a different number from the FP32 CUDA core ceiling and the two
+should not share an axis.
