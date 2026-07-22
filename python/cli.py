@@ -86,6 +86,16 @@ def points_from_timing(results_dir: Path) -> list[RooflinePoint]:
     if not timing_path.exists():
         return []
     frame = loaders.load_timing_csv(timing_path)
+
+    # Only the largest configuration of each series carries a direct label. A
+    # label on every point turns the figure into a wall of overlapping text and
+    # hides the very shape it is meant to show.
+    largest: dict[str, float] = {}
+    for _, row in frame.iterrows():
+        series = _series_key(row)
+        size = float(row.get("problem_size", 0.0) or 0.0)
+        largest[series] = max(largest.get(series, 0.0), size)
+
     points: list[RooflinePoint] = []
     for _, row in frame.iterrows():
         flops = float(row.get("flops", 0.0) or 0.0)
@@ -95,15 +105,38 @@ def points_from_timing(results_dir: Path) -> list[RooflinePoint]:
             meas_bytes
         )
         if flops <= 0.0 or theo_bytes <= 0.0:
-            # Transpose and any row without byte accounting cannot be placed on
-            # the intensity axis; skip it rather than guess.
+            # A transpose does no floating point work, so it has no place on an
+            # arithmetic intensity axis at all. It is reported on the bandwidth
+            # figure instead rather than being forced onto this one.
             continue
         ai, source = resolve_intensity(flops, theo_bytes, meas_bytes)
-        label = f"{row['kernel']} {row['problem_size']}"
+        series = _series_key(row)
+        size = float(row.get("problem_size", 0.0) or 0.0)
         points.append(
-            RooflinePoint(label, ai, float(row["achieved_gflops"]), source)
+            RooflinePoint(
+                series=series,
+                label=str(row["problem_size"]),
+                arithmetic_intensity=ai,
+                achieved_gflops=float(row["achieved_gflops"]),
+                intensity_source=source,
+                annotate=(size == largest.get(series)),
+            )
         )
     return points
+
+
+def _series_key(row: object) -> str:
+    """Identity used for colour and marker: kernel, plus variant for GEMM.
+
+    The GEMM variants are the whole point of the ladder, so they are separate
+    series; every other kernel has a single implementation and does not need the
+    suffix.
+    """
+    kernel = str(row["kernel"])  # type: ignore[index]
+    variant = str(row.get("variant", "") or "")  # type: ignore[union-attr]
+    if kernel == "gemm" and variant:
+        return f"gemm_{variant}"
+    return kernel
 
 
 def regenerate(results_dir: Path, report_dir: Path, peaks_path: Path | None) -> int:

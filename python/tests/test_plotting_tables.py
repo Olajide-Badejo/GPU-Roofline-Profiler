@@ -22,8 +22,13 @@ def test_plot_roofline_writes_pdf_and_png(tmp_path):
         Ceilings(27.0e12, 600.0e9, "measured"),
     ]
     points = [
-        RooflinePoint("saxpy 1M", 0.25, 250.0, IntensitySource.MEASURED),
-        RooflinePoint("gemm_tiled 4096", 40.0, 9800.0, IntensitySource.THEORETICAL),
+        RooflinePoint("saxpy", "1M", 0.25, 250.0, IntensitySource.MEASURED, True),
+        RooflinePoint(
+            "gemm_tiled", "4096", 40.0, 9800.0, IntensitySource.THEORETICAL, True
+        ),
+        # An unrecognised series must still draw, in the muted fallback style,
+        # rather than raising or inventing a new hue.
+        RooflinePoint("something_new", "1", 5.0, 100.0),
     ]
     pdf = tmp_path / "figures" / "roofline.pdf"
     png = tmp_path / "figures" / "roofline.png"

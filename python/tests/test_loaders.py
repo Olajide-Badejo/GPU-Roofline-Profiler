@@ -50,6 +50,23 @@ def test_load_timing_missing_column(tmp_path):
         loaders.load_timing_csv(_write(tmp_path, "t.csv", bad))
 
 
+def test_load_timing_accepts_zero_gflops_for_transpose(tmp_path):
+    # A transpose does no floating point work, so zero achieved GFLOP/s is a
+    # real measurement. The loader must keep the row rather than reject it.
+    rows = GOOD_TIMING + (
+        "transpose,4096,1.20,1.19,0.02,0.0,2026-07-22T10:00:02Z\n"
+    )
+    frame = loaders.load_timing_csv(_write(tmp_path, "t.csv", rows))
+    assert len(frame) == 3
+    assert float(frame.loc[2, "achieved_gflops"]) == 0.0
+
+
+def test_load_timing_rejects_negative_gflops(tmp_path):
+    bad = GOOD_TIMING.replace(",120.5,", ",-120.5,")
+    with pytest.raises(DataValidationError, match="negative"):
+        loaders.load_timing_csv(_write(tmp_path, "t.csv", bad))
+
+
 def test_load_timing_rejects_negative_time(tmp_path):
     bad = GOOD_TIMING.replace("0.12,0.11", "-0.12,0.11")
     with pytest.raises(DataValidationError, match="non positive"):

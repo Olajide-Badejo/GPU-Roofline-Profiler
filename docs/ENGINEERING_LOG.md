@@ -210,6 +210,98 @@ shim applies to the fetched dependency and not to my own project. Hand writing a
 YAML parser to dodge one upstream version declaration would have been a poor
 trade, and vendoring a patched copy is a maintenance burden for the same result.
 
+## 2026-07-22 NVML explains the ceiling that looked impossible
+
+**Symptom.** The measured FP32 peak came out at 33.54 TFLOP/s against a
+theoretical 32.26, or 104 percent of a number nothing is supposed to exceed.
+
+**Root cause, from the NVML trace.** The sweep's NVML log records an SM clock
+averaging 2857 MHz and peaking at 2865 MHz under load, while
+`cudaDevAttrClockRate` reports 2625 MHz. The runtime reports a nominal boost
+clock; the card actually boosts past it. Recomputing the ceiling at the observed
+2865 MHz gives 6144 lanes times 2 times 2.865 GHz, or 35.2 TFLOP/s, and the
+measured 33.54 is then 95 percent of it, which is exactly where a good FMA
+microbenchmark should land.
+
+**What I changed.** Nothing in the derivation. The theoretical ceiling stays
+derived from the clock the runtime reports, because that is the honest,
+reproducible definition, and the report says plainly that the measured compute
+ceiling exceeds it and why. This is precisely the case the NVML monitor exists
+for: without the clock trace this would have looked like a counting bug, and I
+would have gone looking for a factor of two that was never there.
+
+## 2026-07-22 Shared memory tiling did not beat the naive GEMM
+
+**Observation, not a failure.** Across every size measured, the shared memory
+tiled GEMM is no faster than the naive one, and at the smaller sizes it is
+slower:
+
+| size | naive GFLOP/s | tiled GFLOP/s |
+| --- | --- | --- |
+| 512 | 1725 | 1499 |
+| 1024 | 1986 | 1731 |
+| 2048 | 2056 | 1734 |
+| 4096 | 1584 | 1586 |
+
+**Why this is credible rather than a bug.** Both kernels pass the same
+correctness tests against cuBLAS, so they compute the right answer; the question
+is only why the optimisation does not pay. The likely explanation is this card's
+48 MB L2 cache. Tiling exists to cut DRAM traffic from redundant global loads,
+but at 2048 the operands are 16 MB each and the whole working set sits in L2, so
+the naive kernel's redundant loads are already served at cache speed and there is
+no DRAM traffic left for tiling to remove. What tiling does add is a
+`__syncthreads` per tile step and a shared memory round trip, which is pure cost
+when the traffic it would have saved was never going to DRAM.
+
+**Status.** This is a hypothesis with a mechanism, and the Nsight Compute pass is
+what will confirm or kill it: if it is right, the naive kernel shows a high L2 hit
+rate and DRAM traffic far below its theoretical byte count. Recorded here as
+open, and it will be settled with counters rather than with the story that sounds
+best. The register blocked rung, which raises reuse inside the register file
+rather than through shared memory, does pay: 6028 GFLOP/s at 4096, near four
+times the naive kernel.
+
+## 2026-07-22 Small kernels measured cache bandwidth, not DRAM
+
+**Symptom.** SAXPY at 4M elements reported 1583 GB/s of achieved bandwidth. The
+card's theoretical DRAM bandwidth is 672 GB/s, so this is more than twice a
+number that should be an upper bound.
+
+**Root cause.** Same 48 MB L2. At 4M floats the two vectors are 32 MB together
+and fit in L2 entirely, so after the warmup iterations the kernel is not touching
+DRAM at all and the figure is L2 bandwidth wearing a DRAM label. The larger sizes
+behave: at 16M and 64M elements, where the working set is 128 MB and 512 MB,
+SAXPY settles to 560 to 566 GB/s, which is 93 percent of the measured copy
+ceiling and entirely sensible.
+
+**What it means for the report.** The "achieved bandwidth" column is computed
+from the *theoretical* byte count, which assumes every byte comes from DRAM. When
+it does not, the column overstates DRAM traffic. This is exactly the gap the spec
+predicted between theoretical and measured byte counts, and it is why the
+arithmetic intensity of every point is labelled with which byte count produced
+it. The Nsight Compute DRAM counters give the real traffic and will move these
+points to where they belong.
+
+## 2026-07-22 The loader rejected the transpose, correctly and wrongly
+
+**Symptom.** The analysis CLI refused the first real timing CSV:
+`non positive values in 'achieved_gflops' at rows [20..35]`.
+
+**Root cause.** Those sixteen rows are the transpose configurations, and a
+transpose performs no floating point operations at all. Its achieved GFLOP/s is
+exactly zero, which is a true measurement and the entire reason the kernel is in
+the suite. My loader validated throughput as strictly positive, so it threw away
+the one kernel whose defining property is doing no arithmetic.
+
+**Fix.** Split the rule. Times stay strictly positive, because a kernel that took
+zero time did not run. Throughput only has to be non negative and finite. Added a
+regression test that feeds the loader a zero GFLOP transpose row and asserts it
+survives, alongside one that still rejects a negative.
+
+**Worth noting.** The loader was doing its job loudly, which is what it is for.
+The rule it was enforcing was just wrong, and a silent loader would have left me
+with a roofline quietly missing sixteen points.
+
 ## 2026-07-22 The GEMM tolerance was wrong, not the GEMM
 
 **Symptom.** Every GEMM variant failed its correctness test at every size:

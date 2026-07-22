@@ -28,8 +28,15 @@ TIMING_REQUIRED_COLUMNS = (
     "timestamp",
 )
 
-# Positive-valued numeric columns: a zero or negative here is a broken row.
-TIMING_POSITIVE_COLUMNS = ("mean_ms", "median_ms", "achieved_gflops")
+# Times must be strictly positive: a kernel that took zero time did not run.
+TIMING_POSITIVE_COLUMNS = ("mean_ms", "median_ms")
+
+# Throughput may legitimately be zero. The transpose kernels do no floating
+# point work at all, by design, so their achieved GFLOP/s is exactly 0 and that
+# is a real measurement rather than a broken row. Rejecting it would throw away
+# the one kernel in the suite whose whole purpose is to isolate the memory
+# system with no arithmetic in the way.
+TIMING_NONNEGATIVE_COLUMNS = ("achieved_gflops",)
 
 NVML_REQUIRED_COLUMNS = (
     "timestamp",
@@ -57,7 +64,9 @@ def load_timing_csv(path: str | Path) -> pd.DataFrame:
     frame = _read_csv(path)
     _require_columns(frame, TIMING_REQUIRED_COLUMNS, path)
     _reject_nonfinite(frame, TIMING_POSITIVE_COLUMNS, path)
+    _reject_nonfinite(frame, TIMING_NONNEGATIVE_COLUMNS, path)
     _reject_nonpositive(frame, TIMING_POSITIVE_COLUMNS, path)
+    _reject_negative(frame, TIMING_NONNEGATIVE_COLUMNS, path)
     return frame
 
 
