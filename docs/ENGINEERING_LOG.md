@@ -118,8 +118,7 @@ LaTeX reads a text mode underscore as a math subscript.
 preferred this over renaming the generated files, because underscored file names
 are conventional and clear, and the placeholder is the thing that should adapt.
 
-**Verification.** All three reports compile: `main.pdf`, `debug_report.pdf`, and
-`report_for_me.pdf`.
+**Verification.** Both reports compile: `main.pdf` and `debug_report.pdf`.
 
 ## 2026-07-22 Build tooling gaps worked around, not papered over
 

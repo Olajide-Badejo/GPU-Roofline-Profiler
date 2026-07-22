@@ -38,7 +38,6 @@ build: configure
 reports:
 	$(MAKE) -C report pdf
 	$(MAKE) -C report_debug pdf
-	$(MAKE) -C report_for_me pdf
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -1,15 +1,18 @@
 name: ci
 
-# CI has no GPU. It compiles every kernel with nvcc (compile only), runs the
-# Python unit tests, the linters, the dash lint, and a LaTeX compile check
-# against the committed sample dataset. GPU correctness and GPU performance are
-# not testable here, and that is stated plainly rather than papered over.
+# CI runs on a machine with no GPU. It compiles every CUDA kernel with nvcc
+# (compile only, no device needed), runs the Python unit tests and linters,
+# checks the dash style rule, and rebuilds the LaTeX report from the committed
+# sample dataset so the uploaded PDF is the real thing rather than a stub. GPU
+# correctness and performance are validated locally on the RTX 5070, not here,
+# and that boundary is stated plainly rather than papered over.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   python:
@@ -21,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: install dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --upgrade pip -r requirements.txt
       - name: dash lint
         run: python scripts/check_no_dashes.py
       - name: ruff
@@ -34,25 +37,38 @@ jobs:
     runs-on: ubuntu-latest
     container: nvidia/cuda:12.8.0-devel-ubuntu22.04
     steps:
-      - uses: actions/checkout@v4
-      - name: compile every kernel, compile only
+      # The CUDA devel image has the toolkit but not git, which actions/checkout
+      # needs, so install it before checking out.
+      - name: install git
         run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: compile every kernel and profiling unit, compile only
+        run: |
+          set -e
           shopt -s nullglob
           files=(src/kernels/*.cu src/profiling/*.cu)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "no .cu sources yet; nothing to compile"
-            exit 0
+            echo "no .cu sources found"
+            exit 1
           fi
           for f in "${files[@]}"; do
             echo "compiling $f"
             nvcc -std=c++17 -arch=sm_120 -Isrc/include -c "$f" -o /dev/null
           done
+          echo "all ${#files[@]} translation units compiled clean"
 
   report:
-    name: latex compile check
+    name: rebuild report from sample data
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install python dependencies
+        run: python -m pip install --upgrade pip -r requirements.txt
       - name: install a minimal tex toolchain
         run: |
           sudo apt-get update
@@ -60,6 +76,13 @@ jobs:
             texlive-latex-base texlive-latex-recommended \
             texlive-latex-extra texlive-fonts-recommended \
             texlive-science latexmk
+      - name: regenerate figures and tables from the committed sample run
+        run: |
+          python python/cli.py \
+            --results results/sample_run \
+            --report report \
+            --peaks results/sample_run/peaks.csv \
+            --ncu results/sample_run/ncu
       - name: build the main report
         run: make -C report pdf
       - name: upload report PDF

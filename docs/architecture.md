@@ -45,8 +45,8 @@ configs/sweep.yaml
 - **Analysis** (`python/`): loaders validate the CSVs, the model computes
   ceilings and intensities, plotting draws the rooflines, tables writes booktabs
   fragments. `cli.py` runs all of it with one command.
-- **Reports** (`report/`, `report_debug/`, `report_for_me/`): LaTeX that pulls in
-  the generated figures and tables. Nothing in them is a hand typed number.
+- **Reports** (`report/`, `report_debug/`): LaTeX that pulls in the generated
+  figures and tables. Nothing in them is a hand typed number.
 
 ## Reproducibility
 

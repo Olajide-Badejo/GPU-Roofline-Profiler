@@ -38,5 +38,4 @@ function Build-Report {
 
 Build-Report -Directory (Join-Path $repo "report") -Main "main" -UseBibtex $true
 Build-Report -Directory (Join-Path $repo "report_debug") -Main "debug_report" -UseBibtex $false
-Build-Report -Directory (Join-Path $repo "report_for_me") -Main "report_for_me" -UseBibtex $false
 Write-Host "[done] all reports built"
