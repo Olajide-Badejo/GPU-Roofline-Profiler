@@ -134,7 +134,87 @@ thing with no `make` and no Perl. That script is the one I actually verified end
 to end. Once Strawberry Perl is installed the `latexmk` path takes over and the
 fallback stops being reached.
 
-## 2026-07-22 Status at the end of the first session
+## 2026-07-22 Toolchain installed, and CUDA 13 removed the clock properties
+
+**Context.** Toolchain now present: CUDA 13.3.73, MSVC 14.44.35207 (Build Tools
+2022), Nsight Compute 2026.2.1, Nsight Systems 2026.1.3, Ninja 1.12.0, Perl
+5.42.2.
+
+**First symptom.** A trivial smoke test would not compile:
+
+```text
+error: class "cudaDeviceProp" has no member "clockRate"
+error: class "cudaDeviceProp" has no member "memoryClockRate"
+```
+
+**Root cause.** CUDA 13 removed `clockRate` and `memoryClockRate` from
+`cudaDeviceProp`. They were deprecated through 12.x and are now gone. This
+matters well beyond a smoke test: the theoretical peak derivation needs both the
+SM clock and the memory clock, so the whole ceiling calculation depended on two
+fields that no longer exist.
+
+**Fix.** Query them through `cudaDeviceGetAttribute` with `cudaDevAttrClockRate`
+and `cudaDevAttrMemoryClockRate`, which are still supported and returned status 0
+on this card. Both are read at runtime and their status is checked, so if a future
+toolkit removes these too the failure is loud rather than a silent zero that
+would quietly produce a peak of zero and a nonsense roofline.
+
+**Verification, and why I trust the derivation.** The queried values are 48 SMs,
+2.625 GHz boost, 14.001 GHz memory clock, 192 bit bus. Deriving from those:
+
+- FP32 peak: 48 SMs times 128 lanes is 6144 CUDA cores, which matches the vendor
+  reference exactly. Times 2 for the fused multiply add, times 2.625 GHz, gives
+  32.3 TFLOP/s against a vendor quote of about 31 TFLOP/s at a lower reference
+  boost clock. Consistent.
+- Bandwidth: 192 bits is 24 bytes, times 14.001 GHz, times 2 for the double data
+  rate, gives 672.0 GB/s against a vendor quote of 672 GB/s. Exact.
+
+Both derivations landing on the reference numbers is the check that the formulas
+are right. A derived peak far from the reference would have been a bug in my
+arithmetic, not a hardware surprise, exactly as the spec warns.
+
+## 2026-07-22 CMake targeted the wrong GPU architecture
+
+**Symptom.** The first successful configure printed `CUDA architectures: 75`.
+The card is sm_120.
+
+**Root cause.** I set `CMAKE_CUDA_ARCHITECTURES` inside an
+`if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` guard placed after `project()`.
+Enabling the CUDA language in `project()` installs a default value, so by the
+time my guard ran the variable was already defined and my auto detection never
+executed.
+
+**Why it mattered.** This is the quiet, expensive kind of bug. Nothing fails; the
+build just silently compiles for an older architecture than the card, and every
+performance number that followed would have been measured on code generated for
+the wrong target.
+
+**Fix.** Choose the architecture before `project()`. Order of preference is an
+explicit `CUDAARCHS`, then `native` to detect the installed GPU, then 120 as the
+fallback for a GPU free CI runner. Verified: configure now reports `native`.
+
+## 2026-07-22 yaml-cpp does not configure under CMake 4
+
+**Symptom.** `FetchContent` pulled yaml-cpp 0.8.0 and configure failed with
+"Compatibility with CMake < 3.5 has been removed from CMake."
+
+**Root cause.** This machine has CMake 4.3.1, which dropped support for the very
+old `cmake_minimum_required` values that yaml-cpp 0.8.0 still declares.
+
+**Options.** Vendor a patched copy, drop the dependency and hand write a YAML
+subset parser, or tell CMake to treat the old declaration as 3.5.
+
+**Fix and why.** Set `CMAKE_POLICY_VERSION_MINIMUM` to 3.5 immediately around the
+`FetchContent_MakeAvailable` call and unset it afterward, so the compatibility
+shim applies to the fetched dependency and not to my own project. Hand writing a
+YAML parser to dodge one upstream version declaration would have been a poor
+trade, and vendoring a patched copy is a maintenance burden for the same result.
+
+## 2026-07-22 Checkpoint while the toolchain was still missing
+
+Recorded at the pause before the toolchain was installed. Kept as written,
+because the reasoning behind not writing kernels blind is the point of the entry,
+and the next entries above show how it resolved.
 
 Toolchain still not installed (re-probed: `nvcc`, `cl.exe`, `nsys`, `ncu`,
 `perl`, and `ninja` all still absent), so Phases 1 through 4 remain blocked. What

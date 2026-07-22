@@ -1,9 +1,24 @@
 cmake_minimum_required(VERSION 3.24)
 
-# CUDA is enabled as a project language, which requires a CUDA compiler at
-# configure time. On a machine without the toolkit this configure step is
-# expected to fail with a clear message; that is the signal to install the
-# toolchain, not a bug in this file.
+# The CUDA architecture has to be chosen BEFORE project() enables the CUDA
+# language, because project() installs a default of its own and a later
+# "if(NOT DEFINED ...)" guard would never fire. Getting this wrong is quiet and
+# expensive: the build silently targets the default architecture (sm_75 here)
+# instead of the card actually in the machine.
+#
+# Order of preference: an explicit CUDAARCHS from the environment, then "native"
+# to detect the installed GPU, then 120 (Blackwell, the RTX 5070) as the
+# fallback for a machine with no GPU, such as a compile only CI runner.
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  if(DEFINED ENV{CUDAARCHS})
+    set(CMAKE_CUDA_ARCHITECTURES $ENV{CUDAARCHS})
+  elseif(DEFINED ENV{CUDA_NO_GPU} OR DEFINED ENV{CI})
+    set(CMAKE_CUDA_ARCHITECTURES 120)
+  else()
+    set(CMAKE_CUDA_ARCHITECTURES native)
+  endif()
+endif()
+
 project(gpu_roofline_profiler LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -11,17 +26,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# Auto detect the architecture of the installed GPU, falling back to sm_120
-# (Blackwell, the RTX 5070) when detection is unavailable, for example on a CI
-# box with no GPU doing a compile only build.
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  include(CheckLanguage)
-  if(DEFINED ENV{CUDAARCHS})
-    set(CMAKE_CUDA_ARCHITECTURES $ENV{CUDAARCHS})
-  else()
-    set(CMAKE_CUDA_ARCHITECTURES "native")
-  endif()
-endif()
 message(STATUS "CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
 
 find_package(CUDAToolkit REQUIRED)
@@ -38,7 +42,15 @@ FetchContent_Declare(
   GIT_TAG 0.8.0
 )
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+# yaml-cpp 0.8.0 declares a cmake_minimum_required below 3.5, and CMake 4
+# removed compatibility with those. This tells CMake to treat the old
+# declaration as 3.5 so the dependency still configures. It is scoped by being
+# set just before this dependency is populated, and it affects only the fetched
+# subproject, not this one.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(yaml-cpp)
+unset(CMAKE_POLICY_VERSION_MINIMUM CACHE)
 
 # Kernel and profiling sources are globbed so adding a new kernel family does not
 # mean editing this file. Targets are only created once their sources exist, so
