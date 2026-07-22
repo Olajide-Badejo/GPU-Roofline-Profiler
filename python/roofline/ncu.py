@@ -163,7 +163,7 @@ def summarize_cells(tidy: pd.DataFrame) -> pd.DataFrame:
 
 
 def implausible_percentages(
-    summary: pd.DataFrame, tolerance_pct: float = 0.5
+    summary: pd.DataFrame, tolerance_pct: float = 0.0
 ) -> list[tuple[str, str, float]]:
     """Find reported percentages above 100, returned as (cell, column, value).
 
@@ -178,6 +178,10 @@ def implausible_percentages(
     project is meant to avoid. Instead it is surfaced here so the caller can flag
     it, and the report reads such a value as "essentially all hits" while saying
     what the counter actually said.
+
+    The default tolerance is zero: a percentage above 100 is impossible by
+    definition, so there is no margin worth granting it. A tolerance is offered
+    only for callers that want to ignore floating point noise at exactly 100.
     """
     flagged: list[tuple[str, str, float]] = []
     percent_columns = [
