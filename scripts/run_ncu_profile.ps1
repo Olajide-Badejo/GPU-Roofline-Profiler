@@ -43,17 +43,33 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $exe = Join-Path $repo "build\roofline_profiler.exe"
 if (-not (Test-Path $exe)) { Write-Error "driver not built: $exe"; exit 1 }
 
-# Metric names shift between Nsight Compute versions, so the exact list this run
-# used is recorded next to the results rather than trusted from memory.
+# Metric names shift between Nsight Compute versions and between architectures,
+# so these were read out of `ncu --query-metrics` on this machine rather than
+# assumed. The first attempt used dram__bytes_read.sum and dram__bytes_write.sum,
+# which are the names in most published examples and which do not exist on this
+# chip: ncu accepted them and returned "n/a" instead of complaining. The real
+# names here carry an _op_ infix. The exact list is written next to the results.
 $metrics = @(
-    "dram__bytes_read.sum",
-    "dram__bytes_write.sum",
+    # DRAM traffic, for measured arithmetic intensity.
+    "dram__bytes_op_read.sum",
+    "dram__bytes_op_write.sum",
+    # Occupancy actually achieved, not the theoretical limit.
     "sm__warps_active.avg.pct_of_peak_sustained_active",
+    # The padding story for the tiled transpose.
     "l1tex__data_bank_conflicts_pipe_lsu_mem_shared.sum",
+    # Warp execution efficiency: 32 means no divergence.
     "smsp__thread_inst_executed_per_inst_executed.ratio",
+    # L2 hit rate: the number that explains why tiling did not pay.
     "lts__t_sector_hit_rate.pct",
     "sm__throughput.avg.pct_of_peak_sustained_elapsed",
-    "gpu__time_duration.sum"
+    "gpu__time_duration.sum",
+    # Coalescing: sectors per request. A fully coalesced warp reading 4 byte
+    # values moves 128 bytes as 4 sectors per request, so 4 is ideal and higher
+    # means the warp is scattering across more sectors than it needs.
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum",
+    "l1tex__t_requests_pipe_lsu_mem_global_op_ld.sum",
+    "l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum",
+    "l1tex__t_requests_pipe_lsu_mem_global_op_st.sum"
 )
 $metricArg = ($metrics -join ",")
 Set-Content -Path (Join-Path $OutDir "metrics_used.txt") -Value $metrics -Encoding utf8
@@ -134,3 +150,26 @@ foreach ($cell in $cells) {
 $sw.Stop()
 Write-Host ("[done] {0} cells in {1}" -f $total, $sw.Elapsed.ToString("hh\:mm\:ss"))
 Write-Host "output: $OutDir"
+
+# A pass that "succeeds" while collecting nothing is the failure mode that cost
+# me a run already: ncu accepts a metric name it does not support and quietly
+# reports "n/a" for it. Count them and say so, loudly, rather than leaving a
+# directory of empty columns to be discovered much later in the analysis.
+$naCount = 0
+$naMetrics = @{}
+Get-ChildItem $OutDir -Filter "*.csv" | ForEach-Object {
+    Get-Content $_.FullName | Select-String -Pattern '","n/a"$' | ForEach-Object {
+        $naCount++
+        if ($_.Line -match '"Command line profiler metrics","([^"]+)"') {
+            $naMetrics[$matches[1]] = $true
+        }
+    }
+}
+if ($naCount -gt 0) {
+    Write-Warning ("{0} metric values came back as n/a. Affected metrics:" -f $naCount)
+    $naMetrics.Keys | Sort-Object | ForEach-Object { Write-Warning "  $_" }
+    Write-Warning "Check these names against 'ncu --query-metrics' on this machine."
+}
+else {
+    Write-Host "[ok] every requested metric returned a value"
+}
