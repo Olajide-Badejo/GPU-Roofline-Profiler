@@ -52,6 +52,16 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(yaml-cpp)
 unset(CMAKE_POLICY_VERSION_MINIMUM CACHE)
 
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.15.2
+)
+# Keep GoogleTest on the same dynamic CRT as everything else, or MSVC refuses to
+# link the test binary.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
 # Kernel and profiling sources are globbed so adding a new kernel family does not
 # mean editing this file. Targets are only created once their sources exist, so
 # this configures cleanly during the scaffold phase before any kernel is written.
